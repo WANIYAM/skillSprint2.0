@@ -11,7 +11,7 @@ import {
   INITIAL_TEST_CASES,
   INITIAL_USERS,
 } from './src/data/initialData.ts';
-import { Complaint, PolicyDocument, RuleMatrixEntry, PromptTemplate, ReviewerDecision } from './src/types/index.ts';
+import type { Complaint, PolicyDocument, RuleMatrixEntry, PromptTemplate, ReviewerDecision } from './src/types/index.ts';
 import { runPipeline1GenAI } from './src/services/aiPipeline.ts';
 import { runPipeline2RuleValidation, runComparisonEngine } from './src/services/ruleEngine.ts';
 import { runPythonCrosscheck, parseDocumentWithPython } from './src/services/pythonValidator.ts';
@@ -20,7 +20,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const HOST = '0.0.0.0';
 
 app.use(cors());

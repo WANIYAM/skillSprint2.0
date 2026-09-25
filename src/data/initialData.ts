@@ -1,11 +1,11 @@
-import {
+import type {
   PolicyDocument,
   RuleMatrixEntry,
   Complaint,
   PromptTemplate,
   SecurityTestCase,
   UserProfile,
-} from '../types';
+} from '../types/index.ts';
 
 export const INITIAL_USERS: UserProfile[] = [
   { id: 'usr-cust-1', name: 'Sophia Chen', email: 'sophia.chen@example.com', role: 'Customer' },

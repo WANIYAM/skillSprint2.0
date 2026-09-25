@@ -1,4 +1,4 @@
-import {
+import type {
   Complaint,
   PolicyDocument,
   RuleMatrixEntry,
@@ -8,7 +8,7 @@ import {
   UrgencyLevel,
   PriorityLevel,
   EscalationTier,
-} from '../types';
+} from '../types/index.ts';
 
 export function runPipeline2RuleValidation(
   complaint: {

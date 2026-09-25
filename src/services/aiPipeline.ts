@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { Complaint, PolicyDocument, Pipeline1Output, UrgencyLevel, PriorityLevel, SentimentType } from '../types';
+import type { Complaint, PolicyDocument, Pipeline1Output, UrgencyLevel, PriorityLevel, SentimentType } from '../types/index.ts';
 
 export async function runPipeline1GenAI(
   complaint: {
