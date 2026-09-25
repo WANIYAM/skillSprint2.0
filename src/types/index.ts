@@ -6,6 +6,37 @@ export interface UserProfile {
   email: string;
   role: UserRole;
   department?: string;
+  avatar?: string;
+  title?: string;
+  phone?: string;
+  company?: string;
+  status?: 'Active' | 'Inactive' | 'Suspended';
+  joinedDate?: string;
+}
+
+export interface RolePermissions {
+  canSubmitComplaint: boolean;
+  canViewAllComplaints: boolean;
+  canTriageAndRespond: boolean;
+  canReviewAndOverride: boolean;
+  canViewAnalytics: boolean;
+  canManagePolicies: boolean;
+  canManageRuleMatrix: boolean;
+  canManagePromptTemplates: boolean;
+  canRunSecurityTests: boolean;
+}
+
+export interface AuthSession {
+  user: UserProfile;
+  token: string;
+  permissions: RolePermissions;
+  expiresAt: string;
+}
+
+export interface ApiErrorResponse {
+  error: string;
+  code?: string;
+  details?: any;
 }
 
 export type ComplaintStatus =
@@ -31,22 +62,54 @@ export type EscalationTier =
   | 'Compliance Review'
   | 'Critical Management Escalation';
 
+export type DocumentProcessingStatus =
+  | 'UPLOADED'
+  | 'VALIDATING'
+  | 'VALID'
+  | 'PARSING'
+  | 'PARSED'
+  | 'INVALID';
+
 export interface PolicyDocument {
   id: string; // e.g. POL-RET-01
   title: string;
   category: string;
   version: string;
   status: 'Active' | 'Superseded' | 'Draft';
+  processingStatus?: DocumentProcessingStatus;
   effectiveDate: string;
   expiryDate?: string;
   summary: string;
+  filename?: string;
+  fileType?: string;
+  fileSize?: number;
+  checksum?: string;
+  uploadedBy?: string;
   sections: PolicySection[];
+  validationDetails?: {
+    isValid: boolean;
+    checkedAt: string;
+    errors: string[];
+    warnings: string[];
+  };
+  versionHistory?: Array<{
+    version: string;
+    status: 'Active' | 'Superseded' | 'Draft';
+    effectiveDate: string;
+    summary: string;
+    changedBy?: string;
+    updatedAt: string;
+  }>;
 }
 
 export interface PolicySection {
   id: string; // e.g. SEC-01
   heading: string;
   content: string;
+  wordCount?: number;
+  charCount?: number;
+  tokenEstimate?: number;
+  checksum?: string;
   mandatoryConditions?: string[];
   prohibitions?: string[];
   maxRefundDays?: number;
@@ -71,6 +134,8 @@ export interface RuleMatrixEntry {
   referenceSectionId: string;
 }
 
+export type ResponseTone = 'Professional' | 'Empathetic' | 'Concise' | 'Formal' | 'Apologetic' | 'Informative';
+
 export interface Pipeline1Output {
   primaryIssue: string;
   secondaryIssues: string[];
@@ -86,8 +151,11 @@ export interface Pipeline1Output {
     deviceModel?: string;
     serialNumber?: string;
     customerEmail?: string;
+    trackingNumber?: string;
   };
+  summary?: string;
   recommendedDepartment: string;
+  secondaryDepartments?: string[];
   citedPolicies: Array<{
     docId: string;
     sectionId: string;
@@ -99,11 +167,22 @@ export interface Pipeline1Output {
   escalationTier?: EscalationTier;
   escalationReason?: string;
   draftedResponse: string;
+  responseTone?: ResponseTone;
+  followUpRequired?: boolean;
+  followUpReason?: string;
   followUpCommunication: string;
   internalAgentGuidance: string;
   clarificationQuestions?: string[];
+  adversarialAnalysis?: {
+    isAdversarial: boolean;
+    threatType: string;
+    threatDetails: string;
+    recommendedAction: string;
+  };
   rawJson?: string;
   modelUsed?: string;
+  promptTemplateId?: string;
+  promptVersion?: string;
   generatedAt?: string;
 }
 
@@ -198,10 +277,19 @@ export interface ComplaintMessage {
   isInternalNote?: boolean;
 }
 
+export interface MissingInformationResult {
+  hasMissingInfo: boolean;
+  missingFields: string[];
+  clarificationPrompt?: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH';
+  identifiedAt: string;
+}
+
 export interface Complaint {
   id: string; // CMP-2026-XXXX
   title: string;
   description: string;
+  rawDescription?: string;
   customerType: 'Standard' | 'Premium VIP' | 'Enterprise' | 'Small Business';
   productService: string;
   orderReference: string;
@@ -210,12 +298,15 @@ export interface Complaint {
   customerEmail: string;
   customerName: string;
   status: ComplaintStatus;
+  validationStatus?: 'VALID' | 'REJECTED' | 'NEEDS_CORRECTION';
   previousComplaintId?: string;
+  previousComplaintIds?: string[];
   isRepeat: boolean;
   repeatCount?: number;
   isDuplicate?: boolean;
   duplicateComplaintId?: string;
   duplicateSimilarity?: number;
+  missingInformation?: MissingInformationResult;
   requestedResolution: string;
   assignedDepartment: string;
   assignedAgent?: string;
@@ -230,17 +321,36 @@ export interface Complaint {
   auditTrail: AuditLogEntry[];
   messages: ComplaintMessage[];
   attachmentName?: string;
+  csatRating?: number;
+  csatFeedback?: string;
+  csatSubmittedAt?: string;
+}
+
+export interface PromptVersion {
+  version: string;
+  systemPrompt: string;
+  temperature: number;
+  updatedAt: string;
+  changelog: string;
+  author?: string;
+  model?: string;
 }
 
 export interface PromptTemplate {
   id: string;
   name: string;
+  purpose: string;
+  operation: 'Classification' | 'Response Generation' | 'Duplicate Analysis' | 'Missing Information' | 'Policy Validation';
   version: string;
   model: string;
   systemPrompt: string;
+  userPromptTemplate?: string;
+  variables: string[];
   temperature: number;
   status: 'Active' | 'Archived';
   lastUpdated: string;
+  author?: string;
+  history?: PromptVersion[];
 }
 
 export interface SecurityTestCase {

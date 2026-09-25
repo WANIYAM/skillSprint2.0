@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Complaint, EscalationTier, UrgencyLevel, PriorityLevel } from '../types';
+import type { Complaint, EscalationTier, UrgencyLevel, PriorityLevel } from '../types/index.ts';
 import {
   UserCheck,
   AlertTriangle,

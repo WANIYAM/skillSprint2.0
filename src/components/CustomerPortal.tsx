@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Complaint } from '../types';
+import React, { useState, useEffect } from 'react';
+import type { Complaint, UserProfile, PolicyDocument } from '../types/index.ts';
 import {
   FileText,
   Send,
@@ -13,6 +13,15 @@ import {
   Paperclip,
   RefreshCw,
   Info,
+  Star,
+  Flame,
+  Search,
+  BookOpen,
+  HelpCircle,
+  ArrowUpRight,
+  ShieldAlert,
+  ThumbsUp,
+  ExternalLink,
 } from 'lucide-react';
 
 interface CustomerPortalProps {
@@ -21,6 +30,10 @@ interface CustomerPortalProps {
   onSendMessage: (complaintId: string, text: string) => Promise<void>;
   onSelectComplaint: (complaint: Complaint) => void;
   isLoading: boolean;
+  currentUser?: UserProfile | null;
+  policies?: PolicyDocument[];
+  onEscalateComplaint?: (complaintId: string, reason: string) => Promise<void>;
+  onSubmitFeedback?: (complaintId: string, rating: number, feedback: string) => Promise<void>;
 }
 
 export const CustomerPortal: React.FC<CustomerPortalProps> = ({
@@ -29,8 +42,12 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   onSendMessage,
   onSelectComplaint,
   isLoading,
+  currentUser,
+  policies = [],
+  onEscalateComplaint,
+  onSubmitFeedback,
 }) => {
-  const [activeTab, setActiveTab] = useState<'submit' | 'history'>('submit');
+  const [activeTab, setActiveTab] = useState<'submit' | 'history' | 'faqs'>('submit');
   const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(
     complaints.length > 0 ? complaints[0].id : null
   );
@@ -41,8 +58,8 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   const [customerType, setCustomerType] = useState('Standard');
   const [productService, setProductService] = useState('NovaTab Ultra 13"');
   const [orderReference, setOrderReference] = useState('');
-  const [customerName, setCustomerName] = useState('Sophia Chen');
-  const [customerEmail, setCustomerEmail] = useState('sophia.chen@example.com');
+  const [customerName, setCustomerName] = useState(currentUser?.name || 'Sophia Chen');
+  const [customerEmail, setCustomerEmail] = useState(currentUser?.email || 'sophia.chen@example.com');
   const [requestedResolution, setRequestedResolution] = useState('');
   const [channel, setChannel] = useState<'Web Portal' | 'Email' | 'Chat' | 'Support Upload'>('Web Portal');
   const [attachmentName, setAttachmentName] = useState<string>('');
@@ -50,6 +67,34 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   // Conversation state
   const [replyText, setReplyText] = useState('');
   const [submitError, setSubmitError] = useState('');
+
+  // Escalation Modal
+  const [escalateModalOpen, setEscalateModalOpen] = useState(false);
+  const [escalateReason, setEscalateReason] = useState('');
+  const [isEscalating, setIsEscalating] = useState(false);
+
+  // CSAT Rating State
+  const [ratingValue, setRatingValue] = useState<number>(5);
+  const [ratingHover, setRatingHover] = useState<number | null>(null);
+  const [csatFeedbackText, setCsatFeedbackText] = useState('');
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [csatSuccess, setCsatSuccess] = useState(false);
+
+  // FAQ search state
+  const [faqSearch, setFaqSearch] = useState('');
+
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.name) setCustomerName(currentUser.name);
+      if (currentUser.email) setCustomerEmail(currentUser.email);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (complaints.length > 0 && !selectedComplaintId) {
+      setSelectedComplaintId(complaints[0].id);
+    }
+  }, [complaints, selectedComplaintId]);
 
   const selectedComplaint = complaints.find((c) => c.id === selectedComplaintId);
 
@@ -141,6 +186,30 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
     setReplyText('');
   };
 
+  const handleEscalate = async () => {
+    if (!selectedComplaintId || !onEscalateComplaint) return;
+    setIsEscalating(true);
+    try {
+      await onEscalateComplaint(selectedComplaintId, escalateReason);
+      setEscalateModalOpen(false);
+      setEscalateReason('');
+    } finally {
+      setIsEscalating(false);
+    }
+  };
+
+  const handleRatingSubmit = async () => {
+    if (!selectedComplaintId || !onSubmitFeedback) return;
+    setIsSubmittingRating(true);
+    try {
+      await onSubmitFeedback(selectedComplaintId, ratingValue, csatFeedbackText);
+      setCsatSuccess(true);
+      setTimeout(() => setCsatSuccess(false), 3500);
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
+
   const statusSteps = [
     { key: 'New', label: 'Submitted' },
     { key: 'Analyzed', label: 'AI Analyzed' },
@@ -156,59 +225,105 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
     return idx >= 0 ? idx : 1;
   };
 
+  const sampleFaqs = [
+    {
+      q: 'What is the return window for hardware devices?',
+      a: 'Per Policy POL-RET-01, undamaged hardware devices can be returned within 30 calendar days of delivery for a 100% refund. Beyond 30 days, warranty replacements apply.',
+      tag: 'Hardware & Returns',
+    },
+    {
+      q: 'How does double billing refund resolution work?',
+      a: 'Per Policy POL-BIL-03, verified duplicate transactions are reversed automatically to the original payment method within 24–48 banking hours without requiring dispute fees.',
+      tag: 'Billing & Payments',
+    },
+    {
+      q: 'What immediate actions are taken for battery swelling?',
+      a: 'Thermal hazard complaints trigger immediate Priority P1 safety escalation with zero-wait emergency packaging replacement dispatched per Policy POL-SAF-02.',
+      tag: 'Safety & Hardware',
+    },
+    {
+      q: 'How do I track my active complaint status?',
+      a: 'Switch to the "My Active Tickets" tab to monitor real-time triage, view policy clauses cited by our engine, and chat directly with assigned support specialists.',
+      tag: 'Support Process',
+    },
+  ];
+
+  const filteredFaqs = sampleFaqs.filter(
+    (f) =>
+      f.q.toLowerCase().includes(faqSearch.toLowerCase()) ||
+      f.a.toLowerCase().includes(faqSearch.toLowerCase()) ||
+      f.tag.toLowerCase().includes(faqSearch.toLowerCase())
+  );
+
   return (
     <div className="space-y-6">
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-slate-800/80 via-slate-800/50 to-blue-900/20 border border-slate-700/60 rounded-2xl p-6 relative overflow-hidden">
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950/40 border border-slate-700/80 rounded-2xl p-6 relative overflow-hidden shadow-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center space-x-2 mb-1">
-              <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                Customer Self-Service Portal
+            <div className="flex items-center space-x-2 mb-1.5">
+              <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Customer Support Portal
               </span>
               <span className="flex items-center text-xs text-emerald-400">
                 <ShieldCheck className="w-3.5 h-3.5 mr-1" />
-                Guaranteed Policy-Verified Resolutions
+                Guaranteed Ground-Truth Resolutions
               </span>
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight">
-              Customer Complaint Resolution
+              Customer Complaint & Dispute Resolution
             </h1>
-            <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-              Submit your dispute or issue. SupportNova's dual-pipeline intelligence ensures rapid triage,
+            <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
+              Submit your dispute or issue. SupportNova’s dual-pipeline intelligence ensures rapid triage,
               accurate policy verification, and zero hallucinated or unsupported promises.
             </p>
           </div>
 
-          <div className="flex items-center space-x-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-700/60">
+          {/* Navigation Pill Tabs */}
+          <div className="flex items-center space-x-1.5 bg-slate-900/90 p-1.5 rounded-xl border border-slate-700/70 overflow-x-auto scrollbar-none">
             <button
               onClick={() => setActiveTab('submit')}
-              className={`px-4 py-2 rounded-lg text-xs font-medium transition cursor-pointer ${
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
                 activeTab === 'submit'
                   ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
               }`}
             >
-              Submit Complaint
+              <FileText className="w-3.5 h-3.5" />
+              <span>Submit Ticket</span>
             </button>
+
             <button
               onClick={() => setActiveTab('history')}
-              className={`px-4 py-2 rounded-lg text-xs font-medium transition cursor-pointer flex items-center space-x-1.5 ${
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
                 activeTab === 'history'
                   ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
               }`}
             >
-              <span>My Complaints</span>
-              <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-700 text-slate-300">
+              <span>My Tickets</span>
+              <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-700 text-slate-200 font-bold">
                 {complaints.length}
               </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('faqs')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
+                activeTab === 'faqs'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span>Policy FAQs</span>
             </button>
           </div>
         </div>
       </div>
 
-      {activeTab === 'submit' ? (
+      {/* TAB 1: SUBMIT COMPLAINT */}
+      {activeTab === 'submit' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Form */}
           <div className="lg:col-span-2 bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 shadow-xl">
@@ -485,8 +600,10 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             </div>
           </div>
         </div>
-      ) : (
-        /* History & Tracker Tab */
+      )}
+
+      {/* TAB 2: MY TICKETS & REAL-TIME RESOLUTION TRACKER */}
+      {activeTab === 'history' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Complaints list */}
           <div className="space-y-3">
@@ -495,12 +612,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             </h3>
             {complaints.length === 0 ? (
               <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-8 text-center text-slate-400 text-xs">
-                No complaints submitted yet.
+                No complaints submitted yet for this account.
               </div>
             ) : (
               complaints.map((c) => {
                 const isSelected = c.id === selectedComplaintId;
-                const isVerified = c.comparisonResult?.verificationStatus === 'Verified';
 
                 return (
                   <div
@@ -508,7 +624,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                     onClick={() => setSelectedComplaintId(c.id)}
                     className={`p-4 rounded-xl border transition cursor-pointer ${
                       isSelected
-                        ? 'bg-slate-800 border-blue-500 shadow-md'
+                        ? 'bg-slate-800 border-blue-500 shadow-md ring-1 ring-blue-500/50'
                         : 'bg-slate-800/50 border-slate-700/60 hover:bg-slate-800/80'
                     }`}
                   >
@@ -519,10 +635,10 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       <span
                         className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${
                           c.status === 'Resolved' || c.status === 'Closed'
-                            ? 'bg-emerald-500/20 text-emerald-400'
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                             : c.status === 'Escalated'
-                            ? 'bg-rose-500/20 text-rose-400'
-                            : 'bg-blue-500/20 text-blue-300'
+                            ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
                         }`}
                       >
                         {c.status}
@@ -573,11 +689,21 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   </div>
 
                   <div className="flex items-center space-x-2">
+                    {selectedComplaint.status !== 'Resolved' && selectedComplaint.status !== 'Closed' && selectedComplaint.status !== 'Escalated' && (
+                      <button
+                        onClick={() => setEscalateModalOpen(true)}
+                        className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-medium transition cursor-pointer flex items-center space-x-1"
+                      >
+                        <Flame className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Escalate</span>
+                      </button>
+                    )}
+
                     <button
                       onClick={() => onSelectComplaint(selectedComplaint)}
                       className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200 transition cursor-pointer"
                     >
-                      View Intelligence Dossier
+                      View Dossier
                     </button>
                   </div>
                 </div>
@@ -627,6 +753,84 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                     <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line bg-slate-900/50 p-3 rounded-lg border border-slate-800">
                       {selectedComplaint.pipeline1Output.draftedResponse}
                     </p>
+                  </div>
+                )}
+
+                {/* CSAT Rating Widget for Resolved Tickets */}
+                {(selectedComplaint.status === 'Resolved' || selectedComplaint.status === 'Closed') && (
+                  <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <ThumbsUp className="w-4 h-4 text-emerald-400" />
+                        <h4 className="text-xs font-bold text-emerald-300">
+                          Rate Your Resolution Experience (CSAT)
+                        </h4>
+                      </div>
+                      {selectedComplaint.csatRating && (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold">
+                          Rated: {selectedComplaint.csatRating} / 5 Stars
+                        </span>
+                      )}
+                    </div>
+
+                    {csatSuccess && (
+                      <div className="p-2.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs flex items-center space-x-1.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Thank you! Your feedback has been recorded for quality assurance.</span>
+                      </div>
+                    )}
+
+                    {!selectedComplaint.csatRating && (
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() => setRatingValue(star)}
+                              onMouseEnter={() => setRatingHover(star)}
+                              onMouseLeave={() => setRatingHover(null)}
+                              className="p-1 cursor-pointer transition transform hover:scale-110"
+                            >
+                              <Star
+                                className={`w-6 h-6 ${
+                                  (ratingHover !== null ? star <= ratingHover : star <= ratingValue)
+                                    ? 'text-amber-400 fill-amber-400'
+                                    : 'text-slate-600'
+                                }`}
+                              />
+                            </button>
+                          ))}
+                          <span className="text-xs font-semibold text-slate-300 ml-2">
+                            {ratingValue === 5
+                              ? 'Exceptional (5/5)'
+                              : ratingValue === 4
+                              ? 'Very Satisfied (4/5)'
+                              : ratingValue === 3
+                              ? 'Acceptable (3/5)'
+                              : ratingValue === 2
+                              ? 'Disappointed (2/5)'
+                              : 'Unsatisfactory (1/5)'}
+                          </span>
+                        </div>
+
+                        <textarea
+                          rows={2}
+                          value={csatFeedbackText}
+                          onChange={(e) => setCsatFeedbackText(e.target.value)}
+                          placeholder="Optional: How can we improve our support experience?"
+                          className="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
+                        />
+
+                        <button
+                          onClick={handleRatingSubmit}
+                          disabled={isSubmittingRating}
+                          className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow transition cursor-pointer disabled:opacity-50"
+                        >
+                          {isSubmittingRating ? 'Submitting...' : 'Submit CSAT Review'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -682,6 +886,86 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                 Select a complaint from the left to view details and resolution track.
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: POLICY FAQS & SELF SERVICE */}
+      {activeTab === 'faqs' && (
+        <div className="space-y-4">
+          <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6">
+            <div className="max-w-xl mx-auto text-center space-y-2 mb-6">
+              <h2 className="text-lg font-bold text-white">Self-Service Policy & Resolution Guide</h2>
+              <p className="text-xs text-slate-400">
+                Search verified policies and knowledge base clauses for instant clarity before filing a ticket.
+              </p>
+              <div className="relative mt-3">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <input
+                  type="text"
+                  value={faqSearch}
+                  onChange={(e) => setFaqSearch(e.target.value)}
+                  placeholder="Search returns, battery safety, billing reversals..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredFaqs.map((faq, idx) => (
+                <div
+                  key={idx}
+                  className="p-4 rounded-xl bg-slate-900/70 border border-slate-700/70 space-y-2"
+                >
+                  <div className="flex items-start justify-between">
+                    <h3 className="text-xs font-bold text-slate-100">{faq.q}</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0 font-medium">
+                      {faq.tag}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">{faq.a}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Escalation Request Modal */}
+      {escalateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 text-rose-400">
+              <ShieldAlert className="w-5 h-5" />
+              <h3 className="text-sm font-bold text-slate-100">Request Supervisor Escalation</h3>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              If your issue requires urgent intervention or you are dissatisfied with standard resolution timelines, specify the reason below.
+            </p>
+            <textarea
+              rows={3}
+              value={escalateReason}
+              onChange={(e) => setEscalateReason(e.target.value)}
+              placeholder="e.g. Unresolved for 48 hours / Safety hazard / Critical business impact..."
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
+            />
+            <div className="flex items-center space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setEscalateModalOpen(false)}
+                className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isEscalating || !escalateReason.trim()}
+                onClick={handleEscalate}
+                className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+              >
+                {isEscalating ? 'Escalating...' : 'Submit Escalation'}
+              </button>
+            </div>
           </div>
         </div>
       )}
