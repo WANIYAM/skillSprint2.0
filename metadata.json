@@ -1,0 +1,7 @@
+{
+  "name": "SupportNova",
+  "description": "AI-Powered Customer Complaint Resolution Intelligence with Dual-Pipeline Ground-Truth Validation",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,260 @@
+export type UserRole = 'Customer' | 'Agent' | 'Reviewer' | 'Manager' | 'Administrator';
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  department?: string;
+}
+
+export type ComplaintStatus =
+  | 'New'
+  | 'Analyzed'
+  | 'Assigned'
+  | 'In Progress'
+  | 'Awaiting Customer'
+  | 'Escalated'
+  | 'Resolved'
+  | 'Closed'
+  | 'Reopened';
+
+export type UrgencyLevel = 'Low' | 'Medium' | 'High' | 'Critical';
+export type PriorityLevel = 'P1' | 'P2' | 'P3' | 'P4';
+export type SentimentType = 'Frustrated' | 'Angry' | 'Neutral' | 'Polite / Patient' | 'Anxious';
+
+export type EscalationTier =
+  | 'None'
+  | 'Supervisor Review'
+  | 'Department Manager'
+  | 'Specialist Team'
+  | 'Compliance Review'
+  | 'Critical Management Escalation';
+
+export interface PolicyDocument {
+  id: string; // e.g. POL-RET-01
+  title: string;
+  category: string;
+  version: string;
+  status: 'Active' | 'Superseded' | 'Draft';
+  effectiveDate: string;
+  expiryDate?: string;
+  summary: string;
+  sections: PolicySection[];
+}
+
+export interface PolicySection {
+  id: string; // e.g. SEC-01
+  heading: string;
+  content: string;
+  mandatoryConditions?: string[];
+  prohibitions?: string[];
+  maxRefundDays?: number;
+  maxCompensationAmount?: number;
+}
+
+export interface RuleMatrixEntry {
+  id: string; // e.g. RULE-RET-01
+  category: string;
+  subcategory: string;
+  department: string;
+  urgency: UrgencyLevel;
+  priority: PriorityLevel;
+  triggerConditions: string;
+  mandatoryEscalation: boolean;
+  escalationTier: EscalationTier;
+  requiredActions: string[];
+  prohibitedActions: string[];
+  maxCompensationAllowed?: number;
+  slaHours: number;
+  referencePolicyId: string;
+  referenceSectionId: string;
+}
+
+export interface Pipeline1Output {
+  primaryIssue: string;
+  secondaryIssues: string[];
+  category: string;
+  subcategory: string;
+  sentiment: SentimentType;
+  urgency: UrgencyLevel;
+  priority: PriorityLevel;
+  entities: {
+    orderId?: string;
+    amount?: string;
+    date?: string;
+    deviceModel?: string;
+    serialNumber?: string;
+    customerEmail?: string;
+  };
+  recommendedDepartment: string;
+  citedPolicies: Array<{
+    docId: string;
+    sectionId: string;
+    citationText: string;
+    relevance: string;
+  }>;
+  resolutionSteps: string[];
+  escalationRequired: boolean;
+  escalationTier?: EscalationTier;
+  escalationReason?: string;
+  draftedResponse: string;
+  followUpCommunication: string;
+  internalAgentGuidance: string;
+  clarificationQuestions?: string[];
+  rawJson?: string;
+  modelUsed?: string;
+  generatedAt?: string;
+}
+
+export interface Pipeline2Output {
+  expectedCategory: string;
+  expectedSubcategory: string;
+  expectedDepartment: string;
+  expectedUrgency: UrgencyLevel;
+  expectedPriority: PriorityLevel;
+  mandatoryEscalation: boolean;
+  mandatoryEscalationTier: EscalationTier;
+  matchedRules: string[]; // Rule IDs
+  applicablePolicyDocs: string[]; // Doc IDs
+  policyEligibilityApproved: boolean;
+  unsupportedPromiseFlags: Array<{
+    claim: string;
+    reason: string;
+    violatedRuleId: string;
+  }>;
+  hallucinationFlags: Array<{
+    citedDocId: string;
+    reason: string;
+  }>;
+  adversarialPromptFlags: Array<{
+    patternDetected: string;
+    description: string;
+    riskLevel: 'Low' | 'Medium' | 'High' | 'Critical';
+  }>;
+  mandatoryActionMissingFlags: string[];
+  validatedAt: string;
+}
+
+export interface PythonValidationFinding {
+  type: string;
+  severity: 'INFO' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  message: string;
+}
+
+export interface PythonValidationResult {
+  engine: string;
+  status: 'Validated' | 'Crosscheck Flagged' | 'Execution Error';
+  validationScore: number;
+  passed: boolean;
+  adversarialThreats: Array<{
+    pattern: string;
+    description: string;
+    severity: string;
+  }>;
+  findings: PythonValidationFinding[];
+  timestamp: string;
+}
+
+export interface ComparisonResult {
+  categoryMatch: boolean;
+  departmentMatch: boolean;
+  urgencyMatch: boolean;
+  priorityMatch: boolean;
+  escalationMatch: boolean;
+  policyTraceabilityValid: boolean;
+  promisesApproved: boolean;
+  verificationScore: number; // 0-100
+  verificationStatus: 'Verified' | 'Manual Review';
+  discrepancies: string[];
+}
+
+export interface ReviewerDecision {
+  reviewedBy: string;
+  reviewedAt: string;
+  decision: 'Approved' | 'Modified' | 'Rejected' | 'Reclassified' | 'Reassigned' | 'Escalated';
+  overriddenDepartment?: string;
+  overriddenCategory?: string;
+  overriddenUrgency?: UrgencyLevel;
+  overriddenPriority?: PriorityLevel;
+  overriddenResponse?: string;
+  notes: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  actor: string;
+  action: string;
+  details: string;
+}
+
+export interface ComplaintMessage {
+  id: string;
+  sender: 'Customer' | 'Agent' | 'System' | 'Reviewer';
+  senderName: string;
+  timestamp: string;
+  text: string;
+  isInternalNote?: boolean;
+}
+
+export interface Complaint {
+  id: string; // CMP-2026-XXXX
+  title: string;
+  description: string;
+  customerType: 'Standard' | 'Premium VIP' | 'Enterprise' | 'Small Business';
+  productService: string;
+  orderReference: string;
+  channel: 'Web Portal' | 'Email' | 'Chat' | 'Support Upload';
+  submittedAt: string;
+  customerEmail: string;
+  customerName: string;
+  status: ComplaintStatus;
+  previousComplaintId?: string;
+  isRepeat: boolean;
+  repeatCount?: number;
+  isDuplicate?: boolean;
+  duplicateComplaintId?: string;
+  duplicateSimilarity?: number;
+  requestedResolution: string;
+  assignedDepartment: string;
+  assignedAgent?: string;
+  slaDeadline: string;
+  slaHours: number;
+  slaRiskStatus: 'Safe' | 'Approaching' | 'Breached';
+  pipeline1Output?: Pipeline1Output;
+  pipeline2Output?: Pipeline2Output;
+  pythonValidation?: PythonValidationResult;
+  comparisonResult?: ComparisonResult;
+  reviewerDecision?: ReviewerDecision;
+  auditTrail: AuditLogEntry[];
+  messages: ComplaintMessage[];
+  attachmentName?: string;
+}
+
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  version: string;
+  model: string;
+  systemPrompt: string;
+  temperature: number;
+  status: 'Active' | 'Archived';
+  lastUpdated: string;
+}
+
+export interface SecurityTestCase {
+  id: string;
+  name: string;
+  category: 'Prompt Injection' | 'Sentiment-Urgency Trap' | 'Unsupported Promise' | 'Policy Contradiction' | 'Missing Information';
+  description: string;
+  sampleComplaint: {
+    title: string;
+    description: string;
+    productService: string;
+    orderReference: string;
+    customerType: 'Standard' | 'Premium VIP' | 'Enterprise';
+    requestedResolution: string;
+  };
+  expectedDefense: string;
+}
