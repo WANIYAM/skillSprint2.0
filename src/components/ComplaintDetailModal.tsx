@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Complaint, PolicyDocument } from '../types';
+import type { Complaint, PolicyDocument } from '../types/index.ts';
 import {
   X,
   ShieldCheck,
@@ -82,7 +82,7 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
         </div>
 
         {/* Modal Navigation Tabs */}
-        <div className="flex items-center space-x-1 px-6 pt-2 border-b border-slate-800 bg-slate-900/50 text-xs">
+        <div className="flex items-center space-x-1 px-4 sm:px-6 pt-2 border-b border-slate-800 bg-slate-900/50 text-xs overflow-x-auto scrollbar-none whitespace-nowrap">
           {[
             { id: 'dossier', label: 'Triage Dossier' },
             { id: 'pipeline1', label: 'Pipeline 1 (GenAI)' },
@@ -94,7 +94,7 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`px-3.5 py-2 font-medium border-b-2 transition cursor-pointer ${
+              className={`px-3 sm:px-3.5 py-2 font-medium border-b-2 transition cursor-pointer shrink-0 ${
                 activeTab === tab.id
                   ? 'border-blue-500 text-blue-400'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -141,11 +141,45 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
                 </div>
               </div>
 
+              {/* Executive Summary & Adversarial Badge */}
+              {p1?.adversarialAnalysis?.isAdversarial && (
+                <div className="bg-rose-950/40 p-4 rounded-xl border border-rose-500/40 text-xs space-y-1.5">
+                  <div className="flex items-center space-x-2 text-rose-300 font-bold">
+                    <AlertTriangle className="w-4 h-4 text-rose-400" />
+                    <span>SECURITY ALERT: {p1.adversarialAnalysis.threatType} Intercepted</span>
+                  </div>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    {p1.adversarialAnalysis.threatDetails}
+                  </p>
+                  <div className="text-[10px] text-rose-300 font-semibold pt-1 border-t border-rose-500/20">
+                    Recommended Action: {p1.adversarialAnalysis.recommendedAction}
+                  </div>
+                </div>
+              )}
+
+              {p1?.summary && (
+                <div className="bg-blue-950/20 p-3.5 rounded-xl border border-blue-500/30 text-xs">
+                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider block mb-1">
+                    AI Executive Triage Summary
+                  </span>
+                  <p className="text-slate-200 text-xs leading-relaxed">
+                    {p1.summary}
+                  </p>
+                </div>
+              )}
+
               {/* Original Complaint */}
               <div className="bg-slate-800/40 p-4 rounded-xl border border-slate-700/60">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Customer Submission
-                </span>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Customer Submission
+                  </span>
+                  {p1?.responseTone && (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                      Response Tone: {p1.responseTone}
+                    </span>
+                  )}
+                </div>
                 <p className="text-slate-200 leading-relaxed font-sans">
                   {complaint.description}
                 </p>
@@ -154,6 +188,11 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
                   <span>Channel: <strong className="text-slate-200">{complaint.channel}</strong></span>
                   <span>Customer Tier: <strong className="text-slate-200">{complaint.customerType}</strong></span>
                   <span>Target SLA: <strong className="text-slate-200">{complaint.slaHours} Hours</strong></span>
+                  {p1?.followUpRequired && (
+                    <span className="text-amber-300 font-semibold">
+                      Follow-Up Required: {p1.followUpReason || 'Action required'}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -163,11 +202,28 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
                   <span className="font-bold text-blue-400 block pb-1 border-b border-slate-700">
                     Pipeline 1 GenAI Assessment
                   </span>
-                  <div>Category: <strong className="text-white">{p1?.category}</strong></div>
-                  <div>Subcategory: <strong className="text-slate-300">{p1?.subcategory}</strong></div>
-                  <div>Recommended Dept: <strong className="text-blue-300">{p1?.recommendedDepartment}</strong></div>
+                  <div>Primary Issue: <strong className="text-white">{p1?.primaryIssue}</strong></div>
+                  {p1?.secondaryIssues && p1.secondaryIssues.length > 0 && (
+                    <div className="text-[11px] text-slate-300">
+                      Secondary Issues: <span className="text-slate-200 font-medium">{p1.secondaryIssues.join(', ')}</span>
+                    </div>
+                  )}
+                  <div>Category: <strong className="text-white">{p1?.category}</strong> ({p1?.subcategory})</div>
+                  <div>
+                    Routing: <strong className="text-blue-300">{p1?.recommendedDepartment}</strong>
+                    {p1?.secondaryDepartments && p1.secondaryDepartments.length > 0 && (
+                      <span className="text-slate-400 text-[10px] ml-1.5">
+                        (Also: {p1.secondaryDepartments.join(', ')})
+                      </span>
+                    )}
+                  </div>
                   <div>Urgency / Priority: <strong className="text-white">{p1?.urgency} ({p1?.priority})</strong></div>
-                  <div>Escalation: <strong className="text-rose-300">{p1?.escalationRequired ? 'Yes' : 'No'}</strong></div>
+                  <div>Escalation: <strong className="text-rose-300">{p1?.escalationRequired ? `Yes (${p1.escalationTier})` : 'No'}</strong></div>
+                  {p1?.internalAgentGuidance && (
+                    <div className="p-2 rounded bg-slate-900/80 border border-slate-800 text-[10px] text-slate-300 italic">
+                      Guidance: {p1.internalAgentGuidance}
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-slate-800/40 p-4 rounded-xl border border-slate-700/60 space-y-2">
@@ -178,7 +234,10 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
                   <div>Expected Subcategory: <strong className="text-slate-300">{p2?.expectedSubcategory}</strong></div>
                   <div>Mandatory Dept: <strong className="text-emerald-300">{p2?.expectedDepartment}</strong></div>
                   <div>Expected Urgency / Pri: <strong className="text-white">{p2?.expectedUrgency} ({p2?.expectedPriority})</strong></div>
-                  <div>Mandatory Escalation: <strong className="text-rose-300">{p2?.mandatoryEscalation ? 'MANDATORY' : 'No'}</strong></div>
+                  <div>Mandatory Escalation: <strong className="text-rose-300">{p2?.mandatoryEscalation ? `MANDATORY (${p2.mandatoryEscalationTier})` : 'No'}</strong></div>
+                  <div className="text-[11px] text-slate-400">
+                    Matched Rules: <span className="text-slate-200 font-mono">{p2?.matchedRules.join(', ') || 'Standard SLA'}</span>
+                  </div>
                 </div>
               </div>
 

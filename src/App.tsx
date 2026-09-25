@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import {
+import React, { useState, useEffect, useCallback } from 'react';
+import type {
   Complaint,
   PolicyDocument,
   RuleMatrixEntry,
   PromptTemplate,
   SecurityTestCase,
   UserRole,
-} from './types';
+  UserProfile,
+} from './types/index.ts';
 import { Navbar } from './components/Navbar';
 import { CustomerPortal } from './components/CustomerPortal';
 import { AgentDashboard } from './components/AgentDashboard';
@@ -14,17 +15,42 @@ import { ReviewerQueue } from './components/ReviewerQueue';
 import { ManagerDashboard } from './components/ManagerDashboard';
 import { AdminPortal } from './components/AdminPortal';
 import { ComplaintDetailModal } from './components/ComplaintDetailModal';
-import { DEPARTMENTS } from './data/initialData';
+import { AccessDenied } from './components/AccessDenied';
+import { AuthPage } from './components/AuthPage';
+import { UserProfileModal } from './components/UserProfileModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { INITIAL_USERS, DEPARTMENTS } from './data/initialData';
 import { RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function App() {
-  const [currentRole, setCurrentRole] = useState<UserRole>('Agent');
+  // Session & Authentication State (Requirement 1, 2, 4: Strict RBAC Session)
+  const [users, setUsers] = useState<UserProfile[]>(INITIAL_USERS);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    try {
+      const saved = localStorage.getItem('supportnova_auth_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [authToken, setAuthToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('supportnova_auth_token') || null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+
+  // Complaint & Knowledge Base State
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [policies, setPolicies] = useState<PolicyDocument[]>([]);
   const [ruleMatrix, setRuleMatrix] = useState<RuleMatrixEntry[]>([]);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [testCases, setTestCases] = useState<SecurityTestCase[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Inspector modal state
@@ -37,62 +63,187 @@ export default function App() {
   // Flash Notification
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const showNotification = (type: 'success' | 'error', message: string) => {
+  const showNotification = useCallback((type: 'success' | 'error', message: string) => {
     setNotification({ type, message });
-    setTimeout(() => setNotification(null), 4000);
+    const timer = setTimeout(() => setNotification(null), 4500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Secure API fetch helper with automatic auth headers & role verification
+  const apiFetch = useCallback(
+    async (url: string, options: RequestInit = {}): Promise<Response> => {
+      const headers = new Headers(options.headers || {});
+      if (authToken) {
+        headers.set('Authorization', `Bearer ${authToken}`);
+      }
+      if (currentUser) {
+        headers.set('x-user-role', currentUser.role);
+        headers.set('x-user-email', currentUser.email);
+        headers.set('x-user-id', currentUser.id);
+      }
+      if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+        headers.set('Content-Type', 'application/json');
+      }
+
+      try {
+        const res = await fetch(url, { ...options, headers });
+        if (res.status === 403) {
+          const errData = await res.json().catch(() => ({}));
+          showNotification(
+            'error',
+            errData.error || 'Access Denied (403): You do not have permission for this action.'
+          );
+          throw new Error(errData.error || 'Access Denied');
+        }
+        if (res.status === 401) {
+          showNotification('error', 'Session expired. Please sign in again.');
+          setCurrentUser(null);
+          setAuthToken(null);
+          localStorage.removeItem('supportnova_auth_user');
+          localStorage.removeItem('supportnova_auth_token');
+          throw new Error('Unauthorized');
+        }
+        return res;
+      } catch (err: any) {
+        if (!err.message?.includes('Access Denied') && !err.message?.includes('Unauthorized')) {
+          showNotification('error', err.message || 'Network communication error.');
+        }
+        throw err;
+      }
+    },
+    [authToken, currentUser, showNotification]
+  );
+
+  // Fetch data specifically scoped to authenticated user's role
+  const fetchData = useCallback(
+    async (activeUser?: UserProfile | null) => {
+      const user = activeUser !== undefined ? activeUser : currentUser;
+      if (!user) return;
+
+      try {
+        setIsLoading(true);
+        const complaintsUrl =
+          user.role === 'Customer'
+            ? `/api/complaints?email=${encodeURIComponent(user.email)}`
+            : '/api/complaints';
+
+        const promises: Promise<Response | null>[] = [
+          apiFetch(complaintsUrl),
+          apiFetch('/api/knowledge-base'),
+          apiFetch('/api/rule-matrix'),
+        ];
+
+        if (user.role === 'Administrator') {
+          promises.push(apiFetch('/api/prompt-templates'));
+          promises.push(apiFetch('/api/test-scenarios'));
+          promises.push(apiFetch('/api/users').catch(() => null));
+        }
+
+        const [compRes, polRes, ruleRes, promptRes, testRes, userRes] = await Promise.all(promises);
+
+        if (compRes && compRes.ok) {
+          const data = await compRes.json();
+          setComplaints(data.complaints || []);
+        }
+        if (polRes && polRes.ok) {
+          const data = await polRes.json();
+          setPolicies(data.policies || []);
+        }
+        if (ruleRes && ruleRes.ok) {
+          const data = await ruleRes.json();
+          setRuleMatrix(data.ruleMatrix || []);
+        }
+        if (promptRes && promptRes.ok) {
+          const data = await promptRes.json();
+          setPromptTemplates(data.promptTemplates || []);
+        }
+        if (testRes && testRes.ok) {
+          const data = await testRes.json();
+          setTestCases(data.testCases || []);
+        }
+        if (userRes && userRes.ok) {
+          const data = await userRes.json();
+          if (data.users && data.users.length > 0) {
+            setUsers(data.users);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load SupportNova data from API:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [apiFetch, currentUser]
+  );
+
+  useEffect(() => {
+    if (currentUser && authToken) {
+      fetchData(currentUser);
+    }
+  }, [currentUser, authToken, fetchData]);
+
+  // Login Success Handler (Requirement 1, 4, 5: Automatic Role Routing)
+  const handleLoginSuccess = (user: UserProfile, token: string) => {
+    setCurrentUser(user);
+    setAuthToken(token);
+    localStorage.setItem('supportnova_auth_user', JSON.stringify(user));
+    localStorage.setItem('supportnova_auth_token', token);
+    showNotification('success', `Welcome back, ${user.name}! Accessing ${user.role} workspace.`);
+    fetchData(user);
   };
 
-  // Fetch initial data
-  const fetchData = async () => {
+  // Sign Out Handler (Requirement 20: Clean Logout)
+  const handleSignOut = async () => {
     try {
-      setIsLoading(true);
-      const [compRes, polRes, ruleRes, promptRes, testRes] = await Promise.all([
-        fetch('/api/complaints'),
-        fetch('/api/knowledge-base'),
-        fetch('/api/rule-matrix'),
-        fetch('/api/prompt-templates'),
-        fetch('/api/test-scenarios'),
-      ]);
+      if (authToken) {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${authToken}` },
+        }).catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+    localStorage.removeItem('supportnova_auth_user');
+    localStorage.removeItem('supportnova_auth_token');
+    setCurrentUser(null);
+    setAuthToken(null);
+    setComplaints([]);
+    showNotification('success', 'You have been safely signed out.');
+  };
 
-      if (compRes.ok) {
-        const data = await compRes.json();
-        setComplaints(data.complaints || []);
+  // Profile Update Handler
+  const handleUpdateProfile = async (updated: Partial<UserProfile>) => {
+    if (!currentUser) return;
+    try {
+      const res = await apiFetch(`/api/users/${currentUser.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updated),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentUser(data.user);
+        localStorage.setItem('supportnova_auth_user', JSON.stringify(data.user));
+        setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? data.user : u)));
+        showNotification('success', 'Profile updated successfully.');
       }
-      if (polRes.ok) {
-        const data = await polRes.json();
-        setPolicies(data.policies || []);
-      }
-      if (ruleRes.ok) {
-        const data = await ruleRes.json();
-        setRuleMatrix(data.ruleMatrix || []);
-      }
-      if (promptRes.ok) {
-        const data = await promptRes.json();
-        setPromptTemplates(data.promptTemplates || []);
-      }
-      if (testRes.ok) {
-        const data = await testRes.json();
-        setTestCases(data.testCases || []);
-      }
-    } catch (err) {
-      console.error('Failed to load SupportNova data from API:', err);
-    } finally {
-      setIsLoading(false);
+    } catch (err: any) {
+      showNotification('error', err.message || 'Profile update failed.');
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  // Submit New Complaint
+  // Customer: Submit New Complaint
   const handleSubmitComplaint = async (formData: any) => {
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/complaints', {
+      const res = await apiFetch('/api/complaints', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          customerName: currentUser?.name || formData.customerName,
+          customerEmail: currentUser?.email || formData.customerEmail,
+        }),
       });
 
       if (!res.ok) {
@@ -114,15 +265,14 @@ export default function App() {
     }
   };
 
-  // Send Message / Response
+  // Agent/Customer: Send Message
   const handleSendMessage = async (complaintId: string, text: string, nextStatus?: any) => {
     try {
-      const res = await fetch(`/api/complaints/${complaintId}/messages`, {
+      const res = await apiFetch(`/api/complaints/${complaintId}/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sender: currentRole === 'Customer' ? 'Customer' : 'Agent',
-          senderName: currentRole === 'Customer' ? 'Customer User' : 'Support Specialist',
+          sender: currentUser?.role === 'Customer' ? 'Customer' : 'Agent',
+          senderName: currentUser?.name || 'Support Specialist',
           text,
           nextStatus,
         }),
@@ -133,7 +283,7 @@ export default function App() {
         setComplaints((prev) =>
           prev.map((c) => (c.id === complaintId ? data.complaint : c))
         );
-        showNotification('success', 'Message sent and complaint updated.');
+        showNotification('success', 'Message sent successfully.');
       }
     } catch (err) {
       console.error('Failed to send message:', err);
@@ -141,13 +291,57 @@ export default function App() {
     }
   };
 
-  // Update Status
+  // Customer: Escalation Request
+  const handleCustomerEscalate = async (complaintId: string, reason: string) => {
+    try {
+      const res = await apiFetch(`/api/complaints/${complaintId}/escalate`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setComplaints((prev) =>
+          prev.map((c) => (c.id === complaintId ? data.complaint : c))
+        );
+        showNotification('success', 'Ticket escalated for priority supervisor review.');
+      }
+    } catch (err: any) {
+      showNotification('error', err.message || 'Failed to escalate ticket.');
+    }
+  };
+
+  // Customer: CSAT Feedback
+  const handleCustomerFeedback = async (complaintId: string, rating: number, feedback: string) => {
+    try {
+      const res = await apiFetch(`/api/complaints/${complaintId}/feedback`, {
+        method: 'POST',
+        body: JSON.stringify({ rating, feedback }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setComplaints((prev) =>
+          prev.map((c) => (c.id === complaintId ? data.complaint : c))
+        );
+        showNotification('success', 'Thank you! Your CSAT review has been recorded.');
+      }
+    } catch (err: any) {
+      showNotification('error', err.message || 'Failed to submit CSAT review.');
+    }
+  };
+
+  // Agent: Update Status
   const handleUpdateStatus = async (complaintId: string, status: any, dept?: string, agent?: string) => {
     try {
-      const res = await fetch(`/api/complaints/${complaintId}/status`, {
+      const res = await apiFetch(`/api/complaints/${complaintId}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, assignedDepartment: dept, assignedAgent: agent, actor: currentRole }),
+        body: JSON.stringify({
+          status,
+          assignedDepartment: dept,
+          assignedAgent: agent || currentUser?.name,
+          actor: currentUser ? `${currentUser.name} (${currentUser.role})` : 'Agent',
+        }),
       });
 
       if (res.ok) {
@@ -162,13 +356,15 @@ export default function App() {
     }
   };
 
-  // Reviewer Decision
+  // Reviewer: Decision (Approve / Reject / Modify / Override)
   const handleReviewDecision = async (complaintId: string, decisionData: any) => {
     try {
-      const res = await fetch(`/api/complaints/${complaintId}/review`, {
+      const res = await apiFetch(`/api/complaints/${complaintId}/review`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(decisionData),
+        body: JSON.stringify({
+          ...decisionData,
+          reviewedBy: currentUser?.name || 'Reviewer Specialist',
+        }),
       });
 
       if (res.ok) {
@@ -187,10 +383,10 @@ export default function App() {
     }
   };
 
-  // Re-run Dual Pipeline
+  // Reviewer: Re-run Dual Pipeline
   const handleReAnalyze = async (complaintId: string) => {
     try {
-      const res = await fetch(`/api/complaints/${complaintId}/re-analyze`, {
+      const res = await apiFetch(`/api/complaints/${complaintId}/re-analyze`, {
         method: 'POST',
       });
       if (res.ok) {
@@ -206,17 +402,15 @@ export default function App() {
     }
   };
 
-  // Admin Knowledge Base Handlers
+  // Administrator: Knowledge Base Handlers
   const handleUploadDocument = async (uploadData: any) => {
-    const res = await fetch('/api/knowledge-base/upload', {
+    const res = await apiFetch('/api/knowledge-base/upload', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(uploadData),
     });
     if (res.ok) {
       const data = await res.json();
-      // Refresh policies list to reflect new policy and any superseded versions
-      const polRes = await fetch('/api/knowledge-base');
+      const polRes = await apiFetch('/api/knowledge-base');
       if (polRes.ok) {
         const polData = await polRes.json();
         setPolicies(polData.policies);
@@ -231,9 +425,8 @@ export default function App() {
 
   const handleTogglePolicyStatus = async (id: string, newStatus: string) => {
     try {
-      const res = await fetch(`/api/knowledge-base/${id}/status`, {
+      const res = await apiFetch(`/api/knowledge-base/${id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
       if (res.ok) {
@@ -248,9 +441,8 @@ export default function App() {
   };
 
   const handleAddPolicy = async (policyData: any) => {
-    const res = await fetch('/api/knowledge-base', {
+    const res = await apiFetch('/api/knowledge-base', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(policyData),
     });
     if (res.ok) {
@@ -261,9 +453,8 @@ export default function App() {
   };
 
   const handleUpdatePolicy = async (id: string, policyData: any) => {
-    const res = await fetch(`/api/knowledge-base/${id}`, {
+    const res = await apiFetch(`/api/knowledge-base/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(policyData),
     });
     if (res.ok) {
@@ -274,18 +465,17 @@ export default function App() {
   };
 
   const handleDeletePolicy = async (id: string) => {
-    const res = await fetch(`/api/knowledge-base/${id}`, { method: 'DELETE' });
+    const res = await apiFetch(`/api/knowledge-base/${id}`, { method: 'DELETE' });
     if (res.ok) {
       setPolicies((prev) => prev.filter((p) => p.id !== id));
       showNotification('success', `Policy ${id} removed.`);
     }
   };
 
-  // Admin Rule Matrix Handlers
+  // Administrator: Rule Matrix Handlers
   const handleAddRule = async (ruleData: any) => {
-    const res = await fetch('/api/rule-matrix', {
+    const res = await apiFetch('/api/rule-matrix', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ruleData),
     });
     if (res.ok) {
@@ -296,9 +486,8 @@ export default function App() {
   };
 
   const handleUpdateRule = async (id: string, ruleData: any) => {
-    const res = await fetch(`/api/rule-matrix/${id}`, {
+    const res = await apiFetch(`/api/rule-matrix/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ruleData),
     });
     if (res.ok) {
@@ -309,18 +498,32 @@ export default function App() {
   };
 
   const handleDeleteRule = async (id: string) => {
-    const res = await fetch(`/api/rule-matrix/${id}`, { method: 'DELETE' });
+    const res = await apiFetch(`/api/rule-matrix/${id}`, { method: 'DELETE' });
     if (res.ok) {
       setRuleMatrix((prev) => prev.filter((r) => r.id !== id));
       showNotification('success', `Rule ${id} deleted.`);
     }
   };
 
-  // Admin Prompt Templates
+  // Administrator: Prompt Templates
+  const handleAddPromptTemplate = async (templateData: any) => {
+    const res = await apiFetch('/api/prompt-templates', {
+      method: 'POST',
+      body: JSON.stringify(templateData),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setPromptTemplates((prev) => [...prev, data.promptTemplate]);
+      showNotification('success', `Prompt template '${data.promptTemplate.name}' created.`);
+    } else {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to create prompt template');
+    }
+  };
+
   const handleUpdatePromptTemplate = async (id: string, templateData: any) => {
-    const res = await fetch(`/api/prompt-templates/${id}`, {
+    const res = await apiFetch(`/api/prompt-templates/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(templateData),
     });
     if (res.ok) {
@@ -328,21 +531,82 @@ export default function App() {
       setPromptTemplates((prev) =>
         prev.map((t) => (t.id === id ? data.promptTemplate : t))
       );
-      showNotification('success', `Prompt template ${id} updated.`);
+      showNotification('success', data.message || `Prompt template ${id} updated.`);
     }
   };
 
-  // Security Test Case Run
-  const handleRunTestCase = async (testCaseId: string) => {
-    const res = await fetch('/api/test-scenarios/run', {
+  const handleRollbackPrompt = async (id: string, targetVersion: string) => {
+    const res = await apiFetch(`/api/prompt-templates/${id}/rollback`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetVersion }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setPromptTemplates((prev) =>
+        prev.map((t) => (t.id === id ? data.promptTemplate : t))
+      );
+      showNotification('success', `Prompt template rolled back to v${targetVersion}.`);
+    }
+  };
+
+  const handleRollbackPolicy = async (id: string, targetVersion: string) => {
+    const res = await apiFetch(`/api/knowledge-base/${id}/rollback`, {
+      method: 'POST',
+      body: JSON.stringify({ targetVersion }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setPolicies((prev) => prev.map((p) => (p.id === id ? data.policy : p)));
+      showNotification('success', `Policy document rolled back to v${targetVersion}.`);
+    }
+  };
+
+  // Administrator: Security Test Cases
+  const handleRunTestCase = async (testCaseId: string) => {
+    const res = await apiFetch('/api/test-scenarios/run', {
+      method: 'POST',
       body: JSON.stringify({ testCaseId }),
     });
     if (res.ok) {
       return await res.json();
     }
     throw new Error('Test case run failed');
+  };
+
+  // Administrator: User Management CRUD
+  const handleAddUser = async (userData: any) => {
+    const res = await apiFetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setUsers((prev) => [...prev, data.user]);
+      showNotification('success', `User ${data.user.name} created.`);
+    } else {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to create user');
+    }
+  };
+
+  const handleUpdateUser = async (id: string, userData: any) => {
+    const res = await apiFetch(`/api/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(userData),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setUsers((prev) => prev.map((u) => (u.id === id ? data.user : u)));
+      showNotification('success', `User ${data.user.name} updated.`);
+    }
+  };
+
+  const handleDeleteUser = async (id: string) => {
+    const res = await apiFetch(`/api/users/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setUsers((prev) => prev.filter((u) => u.id !== id));
+      showNotification('success', 'User removed from system.');
+    }
   };
 
   // Filter complaints by search query
@@ -363,113 +627,155 @@ export default function App() {
     (c) => c.comparisonResult?.verificationStatus === 'Manual Review'
   ).length;
 
+  // ---------------- RENDERING ----------------
+
+  // 1. Unauthenticated View (Requirement 1, 2, 3, 4: Clean Login/Signup/Forgot flow)
+  if (!currentUser || !authToken) {
+    return <AuthPage onLoginSuccess={handleLoginSuccess} users={users} />;
+  }
+
+  // 2. Authenticated View (Requirement 1, 6, 7, 8, 9, 10: Role-Specific View ONLY)
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
-      {/* Toast Notification */}
-      {notification && (
-        <div className="fixed bottom-5 right-5 z-50 flex items-center space-x-2 px-4 py-3 rounded-xl shadow-2xl bg-slate-900 border border-slate-700 text-xs animate-in fade-in slide-in-from-bottom-2">
-          {notification.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          ) : (
-            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-          )}
-          <span className="text-slate-200 font-medium">{notification.message}</span>
-        </div>
-      )}
-
-      {/* Main Navbar with Role Navigation */}
-      <Navbar
-        currentRole={currentRole}
-        onRoleChange={(role) => setCurrentRole(role)}
-        manualReviewCount={manualReviewCount}
-        totalComplaints={complaints.length}
-        onNewComplaintClick={() => setCurrentRole('Customer')}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-      />
-
-      {/* Main Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-24 space-y-3">
-            <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
-            <p className="text-xs text-slate-400 font-medium">
-              Initializing SupportNova Intelligence Engine & Knowledge Base...
-            </p>
+    <ErrorBoundary>
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white w-full overflow-x-hidden">
+        {/* Flash Toast Notification */}
+        {notification && (
+          <div className="fixed bottom-5 right-5 z-50 flex items-center space-x-2.5 px-4 py-3 rounded-xl shadow-2xl bg-slate-900 border border-slate-700 text-xs animate-in fade-in slide-in-from-bottom-2 max-w-md">
+            {notification.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span className="text-slate-200 font-medium leading-relaxed">{notification.message}</span>
           </div>
-        ) : (
-          <>
-            {currentRole === 'Customer' && (
-              <CustomerPortal
-                complaints={searchedComplaints}
-                onSubmitComplaint={handleSubmitComplaint}
-                onSendMessage={(id, text) => handleSendMessage(id, text)}
-                onSelectComplaint={(c) => setInspectComplaint(c)}
-                isLoading={isSubmitting}
-              />
-            )}
-
-            {currentRole === 'Agent' && (
-              <AgentDashboard
-                complaints={searchedComplaints}
-                onSelectComplaint={(c) => setInspectComplaint(c)}
-                onSendMessage={(id, text, nextSt) => handleSendMessage(id, text, nextSt)}
-                onUpdateStatus={handleUpdateStatus}
-                currentDepartment={currentDepartment}
-                onDepartmentChange={setCurrentDepartment}
-                departments={DEPARTMENTS}
-              />
-            )}
-
-            {currentRole === 'Reviewer' && (
-              <ReviewerQueue
-                complaints={searchedComplaints}
-                onSelectComplaint={(c) => setInspectComplaint(c)}
-                onReviewDecision={handleReviewDecision}
-                onReAnalyze={handleReAnalyze}
-                departments={DEPARTMENTS}
-              />
-            )}
-
-            {currentRole === 'Manager' && (
-              <ManagerDashboard
-                complaints={searchedComplaints}
-                departments={DEPARTMENTS}
-                onSelectComplaint={(c) => setInspectComplaint(c)}
-              />
-            )}
-
-            {currentRole === 'Administrator' && (
-              <AdminPortal
-                policies={policies}
-                ruleMatrix={ruleMatrix}
-                promptTemplates={promptTemplates}
-                testCases={testCases}
-                onAddPolicy={handleAddPolicy}
-                onUpdatePolicy={handleUpdatePolicy}
-                onDeletePolicy={handleDeletePolicy}
-                onUploadDocument={handleUploadDocument}
-                onTogglePolicyStatus={handleTogglePolicyStatus}
-                onAddRule={handleAddRule}
-                onUpdateRule={handleUpdateRule}
-                onDeleteRule={handleDeleteRule}
-                onUpdatePromptTemplate={handleUpdatePromptTemplate}
-                onRunTestCase={handleRunTestCase}
-                departments={DEPARTMENTS}
-              />
-            )}
-          </>
         )}
-      </main>
 
-      {/* Complaint Deep-Dive Dossier Modal */}
-      {inspectComplaint && (
-        <ComplaintDetailModal
-          complaint={inspectComplaint}
-          onClose={() => setInspectComplaint(null)}
-          policies={policies}
+        {/* Role-Dedicated Navigation (Requirement 11, 12: No Role Leakage) */}
+        <Navbar
+          currentUser={currentUser}
+          manualReviewCount={manualReviewCount}
+          totalComplaints={complaints.length}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          onOpenProfileModal={() => setProfileModalOpen(true)}
+          onSignOut={handleSignOut}
         />
-      )}
-    </div>
+
+        {/* Main Role-Specific Workspace Body */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-24 space-y-3">
+              <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
+              <p className="text-xs text-slate-400 font-medium">
+                Loading {currentUser.role} Workspace Data...
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Customer Experience (Requirement 6) */}
+              {currentUser.role === 'Customer' && (
+                <CustomerPortal
+                  complaints={searchedComplaints}
+                  onSubmitComplaint={handleSubmitComplaint}
+                  onSendMessage={(id, text) => handleSendMessage(id, text)}
+                  onSelectComplaint={(c) => setInspectComplaint(c)}
+                  isLoading={isSubmitting}
+                  currentUser={currentUser}
+                  policies={policies}
+                  onEscalateComplaint={handleCustomerEscalate}
+                  onSubmitFeedback={handleCustomerFeedback}
+                />
+              )}
+
+              {/* Agent Experience (Requirement 7) */}
+              {currentUser.role === 'Agent' && (
+                <AgentDashboard
+                  complaints={searchedComplaints}
+                  onSelectComplaint={(c) => setInspectComplaint(c)}
+                  onSendMessage={(id, text, nextSt) => handleSendMessage(id, text, nextSt)}
+                  onUpdateStatus={handleUpdateStatus}
+                  currentDepartment={currentDepartment}
+                  onDepartmentChange={setCurrentDepartment}
+                  departments={DEPARTMENTS}
+                />
+              )}
+
+              {/* Reviewer Experience (Requirement 8) */}
+              {currentUser.role === 'Reviewer' && (
+                <ReviewerQueue
+                  complaints={searchedComplaints}
+                  onSelectComplaint={(c) => setInspectComplaint(c)}
+                  onReviewDecision={handleReviewDecision}
+                  onReAnalyze={handleReAnalyze}
+                  departments={DEPARTMENTS}
+                />
+              )}
+
+              {/* Manager Experience (Requirement 9) */}
+              {currentUser.role === 'Manager' && (
+                <ManagerDashboard
+                  complaints={searchedComplaints}
+                  departments={DEPARTMENTS}
+                  onSelectComplaint={(c) => setInspectComplaint(c)}
+                />
+              )}
+
+              {/* Administrator Experience (Requirement 10) */}
+              {currentUser.role === 'Administrator' && (
+                <AdminPortal
+                  policies={policies}
+                  ruleMatrix={ruleMatrix}
+                  promptTemplates={promptTemplates}
+                  testCases={testCases}
+                  users={users}
+                  onAddPolicy={handleAddPolicy}
+                  onUpdatePolicy={handleUpdatePolicy}
+                  onDeletePolicy={handleDeletePolicy}
+                  onUploadDocument={handleUploadDocument}
+                  onTogglePolicyStatus={handleTogglePolicyStatus}
+                  onAddRule={handleAddRule}
+                  onUpdateRule={handleUpdateRule}
+                  onDeleteRule={handleDeleteRule}
+                  onUpdatePromptTemplate={handleUpdatePromptTemplate}
+                  onAddPromptTemplate={handleAddPromptTemplate}
+                  onRollbackPrompt={handleRollbackPrompt}
+                  onRollbackPolicy={handleRollbackPolicy}
+                  onRunTestCase={handleRunTestCase}
+                  onAddUser={handleAddUser}
+                  onUpdateUser={handleUpdateUser}
+                  onDeleteUser={handleDeleteUser}
+                  departments={DEPARTMENTS}
+                />
+              )}
+            </>
+          )}
+        </main>
+
+        {/* Complaint Deep-Dive Dossier Modal */}
+        {inspectComplaint && (
+          <ComplaintDetailModal
+            complaint={inspectComplaint}
+            onClose={() => setInspectComplaint(null)}
+            policies={policies}
+          />
+        )}
+
+        {/* User Profile & Active Session Modal */}
+        {profileModalOpen && (
+          <UserProfileModal
+            isOpen={profileModalOpen}
+            onClose={() => setProfileModalOpen(false)}
+            currentUser={currentUser}
+            authToken={authToken}
+            onUpdateProfile={handleUpdateProfile}
+            onSignOut={handleSignOut}
+            onSwitchPersona={() => {
+              setProfileModalOpen(false);
+              handleSignOut();
+            }}
+          />
+        )}
+      </div>
+    </ErrorBoundary>
   );
 }

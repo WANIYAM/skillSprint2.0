@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Complaint, EscalationTier } from '../types';
+import type { Complaint, EscalationTier } from '../types/index.ts';
 import {
   Inbox,
   ShieldCheck,

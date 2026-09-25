@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Complaint } from '../types';
+import type { Complaint } from '../types/index.ts';
 import {
   BarChart3,
   TrendingUp,

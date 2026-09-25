@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import {
+import type {
   PolicyDocument,
   RuleMatrixEntry,
   PromptTemplate,
@@ -7,7 +7,9 @@ import {
   UrgencyLevel,
   PriorityLevel,
   EscalationTier,
-} from '../types';
+  UserProfile,
+  UserRole,
+} from '../types/index.ts';
 import {
   Settings,
   BookOpen,
@@ -28,6 +30,15 @@ import {
   FileUp,
   FileText,
   CheckCircle,
+  Users,
+  UserPlus,
+  Shield,
+  KeyRound,
+  Search,
+  User,
+  Bot,
+  UserCheck,
+  BarChart3,
 } from 'lucide-react';
 
 interface AdminPortalProps {
@@ -35,6 +46,7 @@ interface AdminPortalProps {
   ruleMatrix: RuleMatrixEntry[];
   promptTemplates: PromptTemplate[];
   testCases: SecurityTestCase[];
+  users?: UserProfile[];
   onAddPolicy: (policy: any) => Promise<void>;
   onUpdatePolicy: (id: string, policy: any) => Promise<void>;
   onDeletePolicy: (id: string) => Promise<void>;
@@ -42,9 +54,15 @@ interface AdminPortalProps {
   onUpdateRule: (id: string, rule: any) => Promise<void>;
   onDeleteRule: (id: string) => Promise<void>;
   onUpdatePromptTemplate: (id: string, template: any) => Promise<void>;
+  onAddPromptTemplate?: (template: any) => Promise<void>;
+  onRollbackPrompt?: (id: string, targetVersion: string) => Promise<void>;
+  onRollbackPolicy?: (id: string, targetVersion: string) => Promise<void>;
   onRunTestCase: (testCaseId: string) => Promise<any>;
   onUploadDocument?: (payload: any) => Promise<any>;
   onTogglePolicyStatus?: (id: string, newStatus: string) => Promise<void>;
+  onAddUser?: (userData: any) => Promise<void>;
+  onUpdateUser?: (id: string, userData: any) => Promise<void>;
+  onDeleteUser?: (id: string) => Promise<void>;
   departments: string[];
 }
 
@@ -53,6 +71,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   ruleMatrix,
   promptTemplates,
   testCases,
+  users = [],
   onAddPolicy,
   onUpdatePolicy,
   onDeletePolicy,
@@ -60,12 +79,31 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onUpdateRule,
   onDeleteRule,
   onUpdatePromptTemplate,
+  onAddPromptTemplate,
+  onRollbackPrompt,
+  onRollbackPolicy,
   onRunTestCase,
   onUploadDocument,
   onTogglePolicyStatus,
+  onAddUser,
+  onUpdateUser,
+  onDeleteUser,
   departments,
 }) => {
-  const [activeTab, setActiveTab] = useState<'policies' | 'ruleMatrix' | 'prompts' | 'security'>('policies');
+  const [activeTab, setActiveTab] = useState<'policies' | 'ruleMatrix' | 'prompts' | 'security' | 'users'>('policies');
+
+  // User Management State
+  const [isAddingUser, setIsAddingUser] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('All');
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserRole, setNewUserRole] = useState<UserRole>('Agent');
+  const [newUserDepartment, setNewUserDepartment] = useState('Customer Support');
+  const [newUserTitle, setNewUserTitle] = useState('');
+  const [newUserPhone, setNewUserPhone] = useState('');
+  const [newUserCompany, setNewUserCompany] = useState('');
+  const [userActionLoading, setUserActionLoading] = useState(false);
 
   // Policy form modal / state
   const [isAddingPolicy, setIsAddingPolicy] = useState(false);
@@ -73,6 +111,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [newPolicyCategory, setNewPolicyCategory] = useState('Customer Support');
   const [newPolicySummary, setNewPolicySummary] = useState('');
   const [newPolicyVersion, setNewPolicyVersion] = useState('1.0');
+  const [inspectPolicyChunks, setInspectPolicyChunks] = useState<PolicyDocument | null>(null);
+  const [inspectPolicyHistory, setInspectPolicyHistory] = useState<PolicyDocument | null>(null);
 
   // Rule Matrix modal / state
   const [isAddingRule, setIsAddingRule] = useState(false);
@@ -95,6 +135,32 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [uploadParsing, setUploadParsing] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccessInfo, setUploadSuccessInfo] = useState<any | null>(null);
+
+  // Prompt Template Management State (Requirements lii, liii)
+  const [selectedPromptId, setSelectedPromptId] = useState<string>(
+    promptTemplates.length > 0 ? promptTemplates[0].id : 'TPL-GEMINI-CORE'
+  );
+  const activePrompt =
+    promptTemplates.find((t) => t.id === selectedPromptId) ||
+    (promptTemplates.length > 0 ? promptTemplates[0] : null);
+  const [promptText, setPromptText] = useState(activePrompt?.systemPrompt || '');
+  const [promptChangelog, setPromptChangelog] = useState('');
+  const [promptTemperature, setPromptTemperature] = useState(activePrompt?.temperature ?? 0.1);
+  const [promptSaved, setPromptSaved] = useState(false);
+  const [isAddingPromptTpl, setIsAddingPromptTpl] = useState(false);
+  const [newTplName, setNewTplName] = useState('');
+  const [newTplPurpose, setNewTplPurpose] = useState('');
+  const [newTplOperation, setNewTplOperation] = useState<PromptTemplate['operation']>('Response Generation');
+  const [newTplSystemPrompt, setNewTplSystemPrompt] = useState('');
+
+  // Update promptText when activePrompt changes
+  React.useEffect(() => {
+    if (activePrompt) {
+      setPromptText(activePrompt.systemPrompt);
+      setPromptTemperature(activePrompt.temperature ?? 0.1);
+      setPromptChangelog('');
+    }
+  }, [activePrompt?.id, activePrompt?.version]);
 
   const handleDocumentUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,21 +216,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [testResult, setTestResult] = useState<any>(null);
   const [runningTestId, setRunningTestId] = useState<string | null>(null);
 
-  // Active Prompt Template state
-  const [activePrompt, setActivePrompt] = useState<PromptTemplate | null>(
-    promptTemplates.length > 0 ? promptTemplates[0] : null
-  );
-  const [promptText, setPromptText] = useState(activePrompt?.systemPrompt || '');
-  const [promptSaved, setPromptSaved] = useState(false);
-
   const handleSavePrompt = async () => {
     if (!activePrompt) return;
     await onUpdatePromptTemplate(activePrompt.id, {
       ...activePrompt,
       systemPrompt: promptText,
+      temperature: promptTemperature,
+      changelog: promptChangelog || 'Updated prompt directives',
     });
     setPromptSaved(true);
-    setTimeout(() => setPromptSaved(false), 2000);
+    setPromptChangelog('');
+    setTimeout(() => setPromptSaved(false), 2500);
   };
 
   const handleCreatePolicy = async (e: React.FormEvent) => {
@@ -237,10 +299,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           </div>
 
           {/* Tab Selector */}
-          <div className="flex items-center space-x-1 bg-slate-900/80 p-1.5 rounded-xl border border-slate-700/60 text-xs">
+          <div className="flex items-center space-x-1 bg-slate-900/80 p-1.5 rounded-xl border border-slate-700/60 text-xs overflow-x-auto scrollbar-none whitespace-nowrap">
             <button
               onClick={() => setActiveTab('policies')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
                 activeTab === 'policies'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white'
@@ -252,7 +314,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
             <button
               onClick={() => setActiveTab('ruleMatrix')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
                 activeTab === 'ruleMatrix'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white'
@@ -264,7 +326,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
             <button
               onClick={() => setActiveTab('prompts')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
                 activeTab === 'prompts'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white'
@@ -276,7 +338,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
             <button
               onClick={() => setActiveTab('security')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
                 activeTab === 'security'
                   ? 'bg-purple-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white'
@@ -284,6 +346,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             >
               <ShieldAlert className="w-3.5 h-3.5" />
               <span>Security Suite</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
+                activeTab === 'users'
+                  ? 'bg-cyan-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Users & RBAC ({users.length})</span>
             </button>
           </div>
         </div>
@@ -531,6 +605,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 className={`bg-slate-800/60 border rounded-xl p-5 space-y-3 transition ${
                   pol.status === 'Superseded'
                     ? 'border-amber-500/30 opacity-75'
+                    : pol.processingStatus === 'INVALID'
+                    ? 'border-rose-500/40 bg-rose-950/10'
                     : 'border-slate-700/60'
                 }`}
               >
@@ -542,6 +618,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                       v{pol.version}
                     </span>
+                    {pol.processingStatus && (
+                      <span
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                          pol.processingStatus === 'PARSED'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : pol.processingStatus === 'INVALID'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}
+                      >
+                        {pol.processingStatus}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center space-x-2">
@@ -590,32 +679,424 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   {pol.summary}
                 </p>
 
-                {/* Sections */}
+                {/* Metadata & Checksum info */}
+                <div className="grid grid-cols-3 gap-2 py-1.5 px-2 bg-slate-900/60 rounded-lg border border-slate-800 text-[10px] text-slate-400 font-mono">
+                  <div>
+                    <span className="text-slate-500 block">FILE TYPE</span>
+                    <span className="text-slate-200 font-semibold">{pol.fileType || 'SOP DOC'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">SIZE</span>
+                    <span className="text-slate-200">{pol.fileSize ? `${Math.round(pol.fileSize / 1024)} KB` : '42 KB'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">CHECKSUM</span>
+                    <span className="text-blue-400 truncate block">{pol.checksum || 'sha256-verified'}</span>
+                  </div>
+                </div>
+
+                {/* Sections & Traceable Chunks */}
                 <div className="space-y-1.5 pt-2 border-t border-slate-700/60">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Sections ({pol.sections.length})
-                  </span>
-                  {pol.sections.map((sec) => (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Traceable Chunks ({pol.sections.length})
+                    </span>
+                    <button
+                      onClick={() => setInspectPolicyChunks(pol)}
+                      className="text-[10px] text-blue-400 hover:text-blue-300 font-medium cursor-pointer"
+                    >
+                      Inspect All Chunks
+                    </button>
+                  </div>
+                  {pol.sections.slice(0, 2).map((sec) => (
                     <div
                       key={sec.id}
                       className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 text-xs"
                     >
                       <div className="flex items-center justify-between text-slate-300 font-semibold mb-1">
                         <span>[{sec.id}] {sec.heading}</span>
-                        {sec.maxRefundDays && (
-                          <span className="text-[10px] text-amber-400 font-mono">
-                            Max {sec.maxRefundDays} Days
+                        {sec.wordCount && (
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {sec.wordCount} words • ~{sec.tokenEstimate || Math.round(sec.wordCount * 1.3)} tokens
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-400 leading-normal">
+                      <p className="text-[11px] text-slate-400 leading-normal line-clamp-2">
                         {sec.content}
                       </p>
                     </div>
                   ))}
+                  {pol.sections.length > 2 && (
+                    <button
+                      onClick={() => setInspectPolicyChunks(pol)}
+                      className="w-full text-center text-[10px] text-slate-400 hover:text-slate-300 py-1 bg-slate-900/40 rounded border border-slate-800/80 cursor-pointer"
+                    >
+                      +{pol.sections.length - 2} more chunks...
+                    </button>
+                  )}
                 </div>
+
+                {/* Version History Accordion / List (Requirement x) */}
+                {pol.versionHistory && pol.versionHistory.length > 0 && (
+                  <div className="pt-2 border-t border-slate-700/60 space-y-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Version History ({pol.versionHistory.length} previous)
+                    </span>
+                    <div className="space-y-1 max-h-28 overflow-y-auto">
+                      {pol.versionHistory.map((vh, vIdx) => (
+                        <div
+                          key={vIdx}
+                          className="flex items-center justify-between p-1.5 bg-slate-900/40 rounded border border-slate-800/60 text-[10px]"
+                        >
+                          <div className="space-x-1.5 truncate">
+                            <span className="font-mono font-bold text-slate-300">v{vh.version}</span>
+                            <span className="text-slate-500">({vh.effectiveDate})</span>
+                            <span className="text-slate-400 truncate">{vh.summary}</span>
+                          </div>
+                          {onRollbackPolicy && (
+                            <button
+                              onClick={() => onRollbackPolicy(pol.id, vh.version)}
+                              className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 text-[9px] font-semibold cursor-pointer shrink-0 ml-2"
+                            >
+                              Rollback
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Traceable Chunks Inspector Modal */}
+      {inspectPolicyChunks && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+                  <FileText className="w-4 h-4 text-blue-400" />
+                  <span>Traceable Chunks: {inspectPolicyChunks.title} (v{inspectPolicyChunks.version})</span>
+                </h3>
+                <span className="text-xs text-slate-400">
+                  {inspectPolicyChunks.sections.length} deterministic chunks indexed for retrieval
+                </span>
+              </div>
+              <button
+                onClick={() => setInspectPolicyChunks(null)}
+                className="text-slate-400 hover:text-white text-xs cursor-pointer px-2 py-1 bg-slate-800 rounded-lg"
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto space-y-3 flex-1">
+              {inspectPolicyChunks.sections.map((sec, idx) => (
+                <div key={sec.id || idx} className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-blue-400">
+                      [{sec.id}] {sec.heading}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-500">
+                      Hash: {sec.checksum || 'sha256'} • ~{sec.tokenEstimate || 30} tokens
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {sec.content}
+                  </p>
+                  {sec.mandatoryConditions && sec.mandatoryConditions.length > 0 && (
+                    <div className="text-[11px] text-emerald-400 bg-emerald-950/20 p-2 rounded border border-emerald-900/30">
+                      <strong>Mandatory Conditions:</strong> {sec.mandatoryConditions.join('; ')}
+                    </div>
+                  )}
+                  {sec.prohibitions && sec.prohibitions.length > 0 && (
+                    <div className="text-[11px] text-rose-400 bg-rose-950/20 p-2 rounded border border-rose-900/30">
+                      <strong>Prohibitions:</strong> {sec.prohibitions.join('; ')}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Prompts Tab (Requirements lii, liii) */}
+      {activeTab === 'prompts' && (
+        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-700/60 gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center space-x-2">
+                <FileCode className="w-4 h-4 text-blue-400" />
+                <span>AI Prompt Template Management & Version History</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Manage and version AI instruction prompts for classification, response drafting, missing info detection, and validation.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              {promptSaved && (
+                <span className="text-xs text-emerald-400 flex items-center space-x-1 font-semibold">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Prompt Saved & Versioned</span>
+                </span>
+              )}
+              <button
+                onClick={() => setIsAddingPromptTpl(true)}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>New Template</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Template Selector Tabs */}
+          <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-700/40">
+            {promptTemplates.map((tpl) => (
+              <button
+                key={tpl.id}
+                onClick={() => setSelectedPromptId(tpl.id)}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-2 transition cursor-pointer ${
+                  (activePrompt?.id === tpl.id)
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                    : 'bg-slate-900/80 text-slate-300 hover:bg-slate-900 border border-slate-700/60'
+                }`}
+              >
+                <span>{tpl.name}</span>
+                <span className="px-1.5 py-0.5 rounded text-[9px] bg-black/30 text-slate-200 font-mono">
+                  v{tpl.version}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {activePrompt && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase block font-semibold">Template ID & Purpose</span>
+                  <span className="font-mono text-blue-400 font-bold block">{activePrompt.id}</span>
+                  <span className="text-[11px] text-slate-300 truncate block">{activePrompt.purpose || 'Operation prompt'}</span>
+                </div>
+                <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase block font-semibold">Model Engine & Operation</span>
+                  <span className="font-mono text-white block">{activePrompt.model}</span>
+                  <span className="text-[10px] text-purple-400 font-semibold">{activePrompt.operation || 'Response Generation'}</span>
+                </div>
+                <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase block font-semibold">Version & Last Updated</span>
+                  <span className="text-emerald-400 font-semibold block">v{activePrompt.version} ({activePrompt.status})</span>
+                  <span className="text-[10px] text-slate-400">{activePrompt.lastUpdated} by {activePrompt.author || 'AI Admin'}</span>
+                </div>
+                <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase block font-semibold">Temperature ({promptTemperature})</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={promptTemperature}
+                    onChange={(e) => setPromptTemperature(Number(e.target.value))}
+                    className="w-full mt-2 accent-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Variables Placeholders Badge */}
+              {activePrompt.variables && activePrompt.variables.length > 0 && (
+                <div className="flex items-center space-x-2 text-xs bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Available Variables:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {activePrompt.variables.map((v) => (
+                      <span key={v} className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 font-mono text-[10px] text-blue-300">
+                        {`{${v}}`}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  System Prompt Directive (Version Controlled)
+                </label>
+                <textarea
+                  value={promptText}
+                  onChange={(e) => setPromptText(e.target.value)}
+                  rows={10}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 font-mono text-xs text-slate-200 leading-relaxed focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Changelog Note (Saved to version history)
+                  </label>
+                  <input
+                    type="text"
+                    value={promptChangelog}
+                    onChange={(e) => setPromptChangelog(e.target.value)}
+                    placeholder="e.g. Added stricter refund check for 30+ days policies"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-100"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    onClick={async () => {
+                      if (!activePrompt) return;
+                      await onUpdatePromptTemplate(activePrompt.id, {
+                        ...activePrompt,
+                        systemPrompt: promptText,
+                        temperature: promptTemperature,
+                        changelog: promptChangelog || 'Updated prompt parameters',
+                      });
+                      setPromptSaved(true);
+                      setPromptChangelog('');
+                      setTimeout(() => setPromptSaved(false), 2500);
+                    }}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 shadow-md shadow-blue-600/30 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Save & Deploy New Version</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Version History Timeline (Requirement liii) */}
+              {activePrompt.history && activePrompt.history.length > 0 && (
+                <div className="pt-4 border-t border-slate-700/60 space-y-2">
+                  <span className="text-xs font-bold text-white flex items-center space-x-1.5">
+                    <span>Version History Timeline ({activePrompt.history.length} versions)</span>
+                  </span>
+                  <div className="space-y-2 max-h-56 overflow-y-auto">
+                    {activePrompt.history.map((h, hIdx) => (
+                      <div
+                        key={hIdx}
+                        className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex items-center justify-between text-xs"
+                      >
+                        <div className="space-y-0.5 max-w-lg">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-mono font-bold text-blue-400">v{h.version}</span>
+                            <span className="text-slate-500 text-[10px]">({h.updatedAt})</span>
+                            {h.author && <span className="text-slate-400 text-[10px]">by {h.author}</span>}
+                            <span className="text-[10px] font-mono text-slate-400">Temp: {h.temperature}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-300 italic">
+                            "{h.changelog}"
+                          </p>
+                        </div>
+                        {onRollbackPrompt && (
+                          <button
+                            onClick={() => onRollbackPrompt(activePrompt.id, h.version)}
+                            className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold border border-slate-700 cursor-pointer"
+                          >
+                            Rollback to v{h.version}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add New Prompt Template Modal */}
+      {isAddingPromptTpl && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h3 className="text-sm font-bold text-white">Create AI Prompt Template</h3>
+              <button
+                onClick={() => setIsAddingPromptTpl(false)}
+                className="text-xs text-slate-400 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (onAddPromptTemplate && newTplName && newTplSystemPrompt) {
+                  await onAddPromptTemplate({
+                    name: newTplName,
+                    purpose: newTplPurpose,
+                    operation: newTplOperation,
+                    systemPrompt: newTplSystemPrompt,
+                  });
+                  setIsAddingPromptTpl(false);
+                  setNewTplName('');
+                  setNewTplPurpose('');
+                  setNewTplSystemPrompt('');
+                }
+              }}
+              className="space-y-3 text-xs"
+            >
+              <div>
+                <label className="block text-slate-300 mb-1">Template Name</label>
+                <input
+                  type="text"
+                  value={newTplName}
+                  onChange={(e) => setNewTplName(e.target.value)}
+                  required
+                  placeholder="e.g. CSAT Sentiment Analyzer"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-100"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 mb-1">Operation Type</label>
+                  <select
+                    value={newTplOperation}
+                    onChange={(e) => setNewTplOperation(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-100"
+                  >
+                    <option value="Classification">Classification</option>
+                    <option value="Response Generation">Response Generation</option>
+                    <option value="Duplicate Analysis">Duplicate Analysis</option>
+                    <option value="Missing Information">Missing Information</option>
+                    <option value="Policy Validation">Policy Validation</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-300 mb-1">Purpose / Description</label>
+                  <input
+                    type="text"
+                    value={newTplPurpose}
+                    onChange={(e) => setNewTplPurpose(e.target.value)}
+                    placeholder="Short description"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-100"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-slate-300 mb-1">System Prompt Content</label>
+                <textarea
+                  value={newTplSystemPrompt}
+                  onChange={(e) => setNewTplSystemPrompt(e.target.value)}
+                  required
+                  rows={6}
+                  placeholder="You are SupportNova's..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-100 font-mono text-xs"
+                />
+              </div>
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold cursor-pointer"
+                >
+                  Create Template
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1037,6 +1518,321 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Users & RBAC Management Tab */}
+      {activeTab === 'users' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center space-x-2">
+                <Users className="w-4 h-4 text-cyan-400" />
+                <span>Enterprise User & RBAC Governance</span>
+              </h2>
+              <p className="text-xs text-slate-400">
+                Manage accounts, assign roles, enforce department scopes, and audit active sessions
+              </p>
+            </div>
+
+            <button
+              onClick={() => setIsAddingUser(true)}
+              className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition cursor-pointer shadow-md shadow-cyan-600/20 shrink-0"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Add New User</span>
+            </button>
+          </div>
+
+          {/* Role Counts Summary */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {(['Customer', 'Agent', 'Reviewer', 'Manager', 'Administrator'] as UserRole[]).map((r) => {
+              const count = users.filter((u) => u.role === r).length;
+              return (
+                <div
+                  key={r}
+                  onClick={() => setUserRoleFilter(userRoleFilter === r ? 'All' : r)}
+                  className={`p-3 rounded-xl border text-center transition cursor-pointer ${
+                    userRoleFilter === r
+                      ? 'bg-cyan-950/40 border-cyan-500 ring-1 ring-cyan-500'
+                      : 'bg-slate-800/40 border-slate-700/60 hover:bg-slate-800/80'
+                  }`}
+                >
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">{r}s</span>
+                  <span className="text-lg font-bold text-white font-mono mt-0.5 block">{count}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Search & Filter Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-900/60 border border-slate-800 rounded-xl">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Filter users by name, email, department, or company..."
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              />
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <span className="text-xs text-slate-400">Filter Role:</span>
+              <select
+                value={userRoleFilter}
+                onChange={(e) => setUserRoleFilter(e.target.value)}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              >
+                <option value="All">All Roles</option>
+                <option value="Customer">Customer</option>
+                <option value="Agent">Agent</option>
+                <option value="Reviewer">Reviewer</option>
+                <option value="Manager">Manager</option>
+                <option value="Administrator">Administrator</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Add User Modal */}
+          {isAddingUser && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <h3 className="text-sm font-bold text-slate-100 flex items-center space-x-2">
+                    <UserPlus className="w-4 h-4 text-cyan-400" />
+                    <span>Create Enterprise Account</span>
+                  </h3>
+                  <button
+                    onClick={() => setIsAddingUser(false)}
+                    className="text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!newUserName.trim() || !newUserEmail.trim()) return;
+                    setUserActionLoading(true);
+                    try {
+                      if (onAddUser) {
+                        await onAddUser({
+                          name: newUserName.trim(),
+                          email: newUserEmail.trim(),
+                          role: newUserRole,
+                          department: newUserDepartment,
+                          title: newUserTitle.trim() || `${newUserRole} Specialist`,
+                          phone: newUserPhone.trim(),
+                          company: newUserCompany.trim(),
+                        });
+                      }
+                      setIsAddingUser(false);
+                      setNewUserName('');
+                      setNewUserEmail('');
+                    } finally {
+                      setUserActionLoading(false);
+                    }
+                  }}
+                  className="space-y-3 text-xs"
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">Full Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={newUserName}
+                        onChange={(e) => setNewUserName(e.target.value)}
+                        placeholder="e.g. Rachel Adams"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">Email Address *</label>
+                      <input
+                        type="email"
+                        required
+                        value={newUserEmail}
+                        onChange={(e) => setNewUserEmail(e.target.value)}
+                        placeholder="rachel.adams@supportnova.internal"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">Assigned Role</label>
+                      <select
+                        value={newUserRole}
+                        onChange={(e) => setNewUserRole(e.target.value as UserRole)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      >
+                        <option value="Customer">Customer</option>
+                        <option value="Agent">Agent</option>
+                        <option value="Reviewer">Reviewer</option>
+                        <option value="Manager">Manager</option>
+                        <option value="Administrator">Administrator</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">Department</label>
+                      <select
+                        value={newUserDepartment}
+                        onChange={(e) => setNewUserDepartment(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      >
+                        <option value="Customer Support">Customer Support</option>
+                        <option value="Hardware Diagnostics">Hardware Diagnostics</option>
+                        <option value="Billing & Finance">Billing & Finance</option>
+                        <option value="Account & Security">Account & Security</option>
+                        <option value="Logistics & Shipping">Logistics & Shipping</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">Job Title</label>
+                      <input
+                        type="text"
+                        value={newUserTitle}
+                        onChange={(e) => setNewUserTitle(e.target.value)}
+                        placeholder="e.g. Senior Support Specialist"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">Company / Organization</label>
+                      <input
+                        type="text"
+                        value={newUserCompany}
+                        onChange={(e) => setNewUserCompany(e.target.value)}
+                        placeholder="SupportNova Corp"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2 pt-3 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingUser(false)}
+                      className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={userActionLoading}
+                      className="flex-1 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition cursor-pointer disabled:opacity-50"
+                    >
+                      {userActionLoading ? 'Saving...' : 'Create Account'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* User Table */}
+          <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-900/60 shadow-xl">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-800/80 text-slate-300 uppercase tracking-wider font-semibold border-b border-slate-700">
+                  <tr>
+                    <th className="px-4 py-3">User & Identity</th>
+                    <th className="px-4 py-3">Assigned Role</th>
+                    <th className="px-4 py-3">Department / Org</th>
+                    <th className="px-4 py-3">Title</th>
+                    <th className="px-4 py-3 text-center">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 text-slate-200">
+                  {users
+                    .filter((u) => {
+                      if (userRoleFilter !== 'All' && u.role !== userRoleFilter) return false;
+                      if (!userSearch.trim()) return true;
+                      const q = userSearch.toLowerCase();
+                      return (
+                        u.name.toLowerCase().includes(q) ||
+                        u.email.toLowerCase().includes(q) ||
+                        (u.department || '').toLowerCase().includes(q) ||
+                        (u.company || '').toLowerCase().includes(q)
+                      );
+                    })
+                    .map((u) => {
+                      const getBadge = (role: UserRole) => {
+                        switch (role) {
+                          case 'Customer':
+                            return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                          case 'Agent':
+                            return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+                          case 'Reviewer':
+                            return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                          case 'Manager':
+                            return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
+                          case 'Administrator':
+                            return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
+                        }
+                      };
+
+                      return (
+                        <tr key={u.id} className="hover:bg-slate-800/40 transition">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center space-x-2.5">
+                              <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-white shrink-0">
+                                {u.avatar || u.name.slice(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-slate-100">{u.name}</div>
+                                <div className="text-[11px] text-slate-400">{u.email}</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getBadge(u.role)}`}>
+                              {u.role}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3 text-slate-300">
+                            {u.department || u.company || (u.role === 'Customer' ? 'Consumer' : 'General Support')}
+                          </td>
+
+                          <td className="px-4 py-3 text-slate-400">{u.title || `${u.role} Member`}</td>
+
+                          <td className="px-4 py-3 text-center">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              Active
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end space-x-1.5">
+                              {onDeleteUser && (
+                                <button
+                                  onClick={() => onDeleteUser(u.id)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded transition cursor-pointer"
+                                  title="Delete User"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
     </div>
