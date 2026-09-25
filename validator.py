@@ -94,7 +94,7 @@ def validate_and_parse_document(payload: Dict[str, Any]) -> Dict[str, Any]:
             text_parts: List[str] = []
             # Extract plain text from stream objects and FlateDecode streams
             # 1. Uncompressed BT ... ET blocks
-            bt_matches = re.findall(b"BT\s*(.*?)\s*ET", file_bytes, re.DOTALL)
+            bt_matches = re.findall(b"BT*(.*?)*ET", file_bytes, re.DOTALL)
             for b in bt_matches:
                 str_matches = re.findall(rb"\((.*?)\)\s*T[jJ]", b)
                 for sm in str_matches:
@@ -105,7 +105,7 @@ def validate_and_parse_document(payload: Dict[str, Any]) -> Dict[str, Any]:
             for sm in stream_matches:
                 try:
                     decomp = zlib.decompress(sm)
-                    sub_bt = re.findall(b"BT\s*(.*?)\s*ET", decomp, re.DOTALL)
+                    sub_bt = re.findall(b"BT*(.*?)*ET", decomp, re.DOTALL)
                     for b in sub_bt:
                         strs = re.findall(rb"\((.*?)\)\s*T[jJ]", b)
                         for s in strs:
