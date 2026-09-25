@@ -193,9 +193,9 @@ function resolveRequestUser(req: express.Request): { user?: UserProfile; role: U
     return { role: headerRole, email: headerEmail };
   }
 
-  // Default to Agent for internal triage
-  const defaultAgent = registeredUsers.find((u) => u.role === 'Agent') || INITIAL_USERS[1];
-  return { user: defaultAgent, role: 'Agent', email: defaultAgent.email };
+  // Default to Customer role for unauthenticated requests
+  const defaultCustomer = registeredUsers.find((u) => u.role === 'Customer') || INITIAL_USERS[0];
+  return { user: defaultCustomer, role: 'Customer', email: defaultCustomer.email };
 }
 
 // RBAC Middleware Guard (Requirement ii)
@@ -1611,7 +1611,7 @@ app.post('/api/prompt-templates/:id/rollback', checkPermission(['Administrator']
 });
 
 // Analytics & Reports
-app.get('/api/analytics', (req, res) => {
+app.get('/api/analytics', checkPermission(['Agent', 'Reviewer', 'Manager', 'Administrator']), (req, res) => {
   const total = complaints.length;
   const verified = complaints.filter((c) => c.comparisonResult?.verificationStatus === 'Verified').length;
   const manualReview = complaints.filter((c) => c.comparisonResult?.verificationStatus === 'Manual Review').length;
@@ -1670,7 +1670,7 @@ app.get('/api/analytics', (req, res) => {
 });
 
 // Model Validation & Compliance Report (Requirements lxxii, lxxiii)
-app.get('/api/reports/validation', (req, res) => {
+app.get('/api/reports/validation', checkPermission(['Reviewer', 'Manager', 'Administrator']), (req, res) => {
   const total = complaints.length;
   const verified = complaints.filter((c) => c.comparisonResult?.verificationStatus === 'Verified').length;
   const flagged = complaints.filter((c) => c.pythonValidation && !c.pythonValidation.passed).length;
