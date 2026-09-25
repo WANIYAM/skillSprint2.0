@@ -1,6 +1,8 @@
 # SupportNova 🚀
 ### AI-Powered Customer Complaint Resolution Intelligence & Dual-Pipeline Ground-Truth Validation
 
+SupportNova now runs on a Python FastAPI backend with SQLite/SQLAlchemy persistence. The React frontend and its API contract remain unchanged. The former Express implementation is retained as `server.ts` under the `npm run dev:legacy` and `npm run start:legacy` commands for migration comparison only.
+
 SupportNova is an enterprise-grade customer complaint resolution and quality assurance platform. It combines **Google Gemini Generative AI (Pipeline 1)**, a **Deterministic Ground-Truth Rule Matrix Engine (Pipeline 2)**, and an **Independent Python 3.10 Cross-Verification Engine** to provide automated triage, classification, policy validation, hallucination detection, SLA tracking, and audit-logged manual review.
 
 ---
@@ -117,6 +119,14 @@ npm install
 
 *(Alternatively, with bun: `bun install`)*
 
+> Windows PowerShell users can run the same `npm install` command from the project folder. The repository already includes `node_modules`, but installing again is safe after a fresh clone.
+
+Install the FastAPI backend dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
 ### 3. Configure Environment Variables
 
 Create a `.env` file from `.env.example`:
@@ -142,13 +152,28 @@ GEMINI_API_KEY=your_gemini_api_key_here
 SupportNova calls `python3` to execute the ground-truth validator and document parser (`validator.py`). Test that Python 3 is accessible:
 
 ```bash
-python3 validator.py < /dev/null
+python3 -c "import validator; print('Python Validator OK')"
 ```
-*If you are on Windows and use `python` instead of `python3`, ensure `python3` is aliased or available in your system `PATH`.*
 
-### 5. Run Development Server
+On Windows, use:
 
-Start the full-stack server (runs both the Express API and Vite frontend middleware):
+```powershell
+python -c "import validator; print('Python Validator OK')"
+```
+
+Python is used through the standard library only; no `pip install` step is required.
+
+### 5. Build the frontend
+
+The FastAPI application serves the production frontend from `dist/`:
+
+```bash
+npm run build
+```
+
+### 6. Run Development Server
+
+Start the FastAPI server:
 
 ```bash
 npm run dev
@@ -156,14 +181,62 @@ npm run dev
 
 You should see output similar to:
 ```
-  VITE v6.0.7  ready in ~200 ms
-
-  ➜  Local:   http://localhost:3000/
-  ➜  Network: http://0.0.0.0:3000/
+INFO:     Uvicorn running on http://0.0.0.0:3000
 ```
 
 Open your browser and navigate to:
 👉 **[http://localhost:3000](http://localhost:3000)**
+
+Keep this terminal running. To stop the server, press `Ctrl+C`.
+
+For frontend-only Vite development, use a second terminal:
+
+```bash
+npm run dev:frontend
+```
+
+The FastAPI API remains at **http://localhost:3000**. The Vite development page is normally at **http://localhost:5173**.
+
+### 7. Run the production server
+
+Validate, build, and start:
+
+```bash
+npm run lint
+npm run build
+```
+
+Then start the Node server:
+
+```bash
+npm start
+```
+
+The production server is available at **http://localhost:3000**.
+
+### Authentication
+
+The login and signup screens are served by the same Express/Vite server, so use the application URL above rather than opening `index.html` directly.
+
+- **Sign up:** choose **Create Account**, enter a name, email, and password of at least 6 characters. New public accounts are assigned the `Customer` role automatically.
+- **Sign in:** use the email and password created during signup.
+- **Demo accounts:** click any one-click persona on the login screen. Demo accounts use `demo` as their password when signing in with credentials.
+- **Forgot password:** request a reset code from the login screen. In local demo mode, the reset code is displayed in the response message.
+
+Authentication is intentionally in-memory for this demo: registered users, passwords, and sessions reset whenever the server restarts. Do not use real production credentials.
+
+### Backend migration files
+
+| File | Purpose |
+|---|---|
+| `main.py` | FastAPI application and API-compatible routes |
+| `database.py` | SQLite engine and SQLAlchemy initialization |
+| `models.py` | SQLAlchemy models for complaints, policies, rules, users, and prompts |
+| `ai_pipeline.py` | Python Pipeline 1 implementation |
+| `rule_engine.py` | Python deterministic Pipeline 2/comparison implementation |
+| `validator.py` | Native imported validation and document parsing engine |
+| `seed_data.json` | Exported initial users, complaints, policies, rules, prompts, and test cases |
+| `requirements.txt` | Python runtime dependencies |
 
 ---
 
@@ -220,6 +293,11 @@ SupportNova features built-in document parsing and semantic chunking:
 
 | Method | Endpoint | Purpose |
 |---|---|---|
+| `POST` | `/api/auth/register` | Create a Customer account and start a session |
+| `POST` | `/api/auth/login` | Sign in with email/password or a demo user ID |
+| `POST` | `/api/auth/forgot-password` | Request a local password reset code |
+| `POST` | `/api/auth/reset-password` | Reset a password and start a session |
+| `POST` | `/api/auth/logout` | End the current session |
 | `GET` | `/api/complaints` | Retrieve complaints with optional status & department filters |
 | `POST` | `/api/complaints` | Submit a new complaint (triggers 3-way triage & cross-verification) |
 | `GET` | `/api/complaints/:id` | Fetch full intelligence packet for a specific complaint |

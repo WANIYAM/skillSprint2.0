@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { createHash, timingSafeEqual } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
@@ -144,6 +145,19 @@ function calculateSlaStatus(deadlineStr: string): 'Safe' | 'Approaching' | 'Brea
 // In-memory active user sessions
 const activeSessions = new Map<string, { user: UserProfile; expiresAt: number }>();
 let registeredUsers: UserProfile[] = [...INITIAL_USERS];
+const userPasswords = new Map<string, string>(
+  registeredUsers.map((user) => [user.id, hashPassword('demo')])
+);
+
+function hashPassword(password: string): string {
+  return createHash('sha256').update(password).digest('hex');
+}
+
+function passwordsMatch(password: string, passwordHash: string): boolean {
+  const suppliedHash = Buffer.from(hashPassword(password), 'utf8');
+  const storedHash = Buffer.from(passwordHash, 'utf8');
+  return suppliedHash.length === storedHash.length && timingSafeEqual(suppliedHash, storedHash);
+}
 
 // Helper: Resolve current user and role from request (Requirement i & ii)
 function resolveRequestUser(req: express.Request): { user?: UserProfile; role: UserRole; email?: string } {
@@ -233,6 +247,13 @@ app.post(['/api/auth/register', '/api/auth/signup'], (req, res) => {
     });
   }
 
+  if (!password || typeof password !== 'string' || password.length < 6) {
+    return res.status(400).json({
+      error: 'Password must be at least 6 characters long.',
+      code: 'PASSWORD_TOO_SHORT',
+    });
+  }
+
   const normalizedEmail = email.trim().toLowerCase();
   const existingUser = registeredUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
   if (existingUser) {
@@ -267,6 +288,7 @@ app.post(['/api/auth/register', '/api/auth/signup'], (req, res) => {
   };
 
   registeredUsers.push(newUser);
+  userPasswords.set(newUser.id, hashPassword(password));
 
   // Auto-login after registration
   const token = `tok_${newUser.id}_${Date.now()}`;
@@ -283,7 +305,8 @@ app.post(['/api/auth/register', '/api/auth/signup'], (req, res) => {
 });
 
 app.post('/api/auth/login', (req, res) => {
-  const { email, userId, role } = req.body;
+  const { email, userId, role, password = '' } = req.body;
+  const isDemoLogin = Boolean(userId || role);
   let user: UserProfile | undefined;
 
   if (userId) {
@@ -297,6 +320,14 @@ app.post('/api/auth/login', (req, res) => {
   if (!user) {
     return res.status(401).json({
       error: 'Invalid credentials or user not found.',
+      code: 'AUTH_INVALID_CREDENTIALS',
+    });
+  }
+
+  const storedPassword = userPasswords.get(user.id);
+  if (!isDemoLogin && storedPassword && !passwordsMatch(password, storedPassword)) {
+    return res.status(401).json({
+      error: 'Invalid email or password.',
       code: 'AUTH_INVALID_CREDENTIALS',
     });
   }
@@ -365,6 +396,7 @@ app.post('/api/auth/reset-password', (req, res) => {
   }
 
   passwordResetTokens.delete(resetToken.trim());
+  userPasswords.set(user.id, hashPassword(newPassword));
 
   // Log in user with fresh token
   const token = `tok_${user.id}_${Date.now()}`;
@@ -427,6 +459,7 @@ app.post('/api/users', checkPermission(['Administrator', 'Manager']), (req, res)
   };
 
   registeredUsers.push(newUser);
+  userPasswords.set(newUser.id, hashPassword('demo'));
   res.status(201).json({ user: newUser, message: 'User created successfully' });
 });
 

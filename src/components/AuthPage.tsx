@@ -79,6 +79,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, users }) => 
       setErrorMessage('Please enter your email address.');
       return;
     }
+    if (!loginPassword) {
+      setErrorMessage('Please enter your password.');
+      return;
+    }
 
     setIsLoading(true);
     try {
