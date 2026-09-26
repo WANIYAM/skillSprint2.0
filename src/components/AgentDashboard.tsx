@@ -37,7 +37,7 @@ export const AgentDashboard: React.FC<AgentDashboardProps> = ({
   departments,
 }) => {
   const [selectedId, setSelectedId] = useState<string | null>(
-    complaints.length > 0 ? complaints[0].id : null
+    (complaints ?? []).length > 0 ? complaints[0].id : null
   );
   const [responseDraft, setResponseDraft] = useState('');
   const [isEscalating, setIsEscalating] = useState(false);
@@ -46,7 +46,7 @@ export const AgentDashboard: React.FC<AgentDashboardProps> = ({
   const [statusFilter, setStatusFilter] = useState('All');
   const [showInternalGuidance, setShowInternalGuidance] = useState(true);
 
-  const selected = complaints.find((c) => c.id === selectedId);
+  const selected = (complaints ?? []).find((c) => c.id === selectedId);
 
   // Synchronize draft response when switching tickets
   React.useEffect(() => {
@@ -56,7 +56,7 @@ export const AgentDashboard: React.FC<AgentDashboardProps> = ({
     }
   }, [selectedId, selected]);
 
-  const filtered = complaints.filter((c) => {
+  const filtered = (complaints ?? []).filter((c) => {
     if (currentDepartment !== 'All' && c.assignedDepartment !== currentDepartment) return false;
     if (statusFilter !== 'All' && c.status !== statusFilter) return false;
     return true;
@@ -298,7 +298,7 @@ export const AgentDashboard: React.FC<AgentDashboardProps> = ({
                   <div className="bg-slate-900/60 p-2 rounded border border-slate-800">
                     <span className="text-[10px] text-slate-400 block">Matched Rules</span>
                     <span className="font-mono text-blue-300 text-[11px]">
-                      {selected.pipeline2Output?.matchedRules.join(', ') || 'Standard Triage'}
+                      {(selected.pipeline2Output?.matchedRules || []).join(', ') || 'Standard Triage'}
                     </span>
                   </div>
                   <div className="bg-slate-900/60 p-2 rounded border border-slate-800">
@@ -322,14 +322,14 @@ export const AgentDashboard: React.FC<AgentDashboardProps> = ({
                 </div>
 
                 {/* Warnings or discrepancies */}
-                {selected.comparisonResult && selected.comparisonResult.discrepancies.length > 0 && (
+                {selected.comparisonResult && (selected.comparisonResult.discrepancies || []).length > 0 && (
                   <div className="mt-3 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300 space-y-1">
                     <span className="font-semibold flex items-center">
                       <AlertTriangle className="w-3.5 h-3.5 mr-1" />
                       Discrepancies flagged for reviewer review:
                     </span>
                     <ul className="list-disc pl-4 text-[11px] space-y-0.5">
-                      {selected.comparisonResult.discrepancies.map((d, i) => (
+                      {(selected.comparisonResult.discrepancies || []).map((d, i) => (
                         <li key={i}>{d}</li>
                       ))}
                     </ul>
@@ -355,13 +355,13 @@ export const AgentDashboard: React.FC<AgentDashboardProps> = ({
                       <p className="italic text-indigo-200 bg-indigo-950/20 p-2.5 rounded border border-indigo-500/20">
                         {selected.pipeline1Output.internalAgentGuidance}
                       </p>
-                      {selected.pipeline1Output.resolutionSteps.length > 0 && (
+                      {(selected.pipeline1Output.resolutionSteps || []).length > 0 && (
                         <div>
                           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
                             Recommended Action Checklist:
                           </span>
                           <ul className="space-y-1 pl-4 list-decimal text-slate-300 text-xs">
-                            {selected.pipeline1Output.resolutionSteps.map((step, idx) => (
+                            {(selected.pipeline1Output.resolutionSteps || []).map((step, idx) => (
                               <li key={idx}>{step}</li>
                             ))}
                           </ul>

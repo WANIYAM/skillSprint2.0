@@ -29,32 +29,34 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
   const [selectedDept, setSelectedDept] = useState('All');
 
   const filtered = selectedDept === 'All'
-    ? complaints
-    : complaints.filter((c) => c.assignedDepartment === selectedDept);
+    ? (complaints ?? [])
+    : (complaints ?? []).filter((c) => c.assignedDepartment === selectedDept);
 
-  const total = filtered.length;
-  const verified = filtered.filter((c) => c.comparisonResult?.verificationStatus === 'Verified').length;
-  const manualReview = filtered.filter((c) => c.comparisonResult?.verificationStatus === 'Manual Review').length;
+  const total = (filtered ?? []).length;
+  const verified = (filtered ?? []).filter((c) => c.comparisonResult?.verificationStatus === 'Verified').length;
+  const manualReview = (filtered ?? []).filter((c) => c.comparisonResult?.verificationStatus === 'Manual Review').length;
   const autoVerificationRate = total > 0 ? Math.round((verified / total) * 100) : 100;
 
-  const resolved = filtered.filter((c) => c.status === 'Resolved' || c.status === 'Closed').length;
+  const resolved = (filtered ?? []).filter((c) => c.status === 'Resolved' || c.status === 'Closed').length;
   const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
 
-  const escalated = filtered.filter((c) => c.status === 'Escalated').length;
-  const slaBreached = filtered.filter((c) => c.slaRiskStatus === 'Breached').length;
-  const slaApproaching = filtered.filter((c) => c.slaRiskStatus === 'Approaching').length;
+  const escalated = (filtered ?? []).filter((c) => c.status === 'Escalated').length;
+  const slaBreached = (filtered ?? []).filter((c) => c.slaRiskStatus === 'Breached').length;
+  const slaApproaching = (filtered ?? []).filter((c) => c.slaRiskStatus === 'Approaching').length;
   const slaComplianceRate = total > 0 ? Math.round(((total - slaBreached) / total) * 100) : 100;
 
   // Department distribution
   const deptCounts: Record<string, number> = {};
-  complaints.forEach((c) => {
-    deptCounts[c.assignedDepartment] = (deptCounts[c.assignedDepartment] || 0) + 1;
+  (complaints ?? []).forEach((c) => {
+    if (c?.assignedDepartment) {
+      deptCounts[c.assignedDepartment] = (deptCounts[c.assignedDepartment] || 0) + 1;
+    }
   });
 
   // Category distribution
   const categoryCounts: Record<string, number> = {};
-  complaints.forEach((c) => {
-    const cat = c.pipeline1Output?.category || 'General';
+  (complaints ?? []).forEach((c) => {
+    const cat = c?.pipeline1Output?.category || 'General';
     categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
   });
 

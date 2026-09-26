@@ -126,31 +126,18 @@ def startup() -> None:
 
 def current_user(request: Request, db: Session = Depends(db_session)) -> dict[str, Any]:
     authorization = request.headers.get("authorization", "")
-    if authorization:
-        if not authorization.startswith("Bearer ") or not authorization[7:]:
-            raise HTTPException(401, {"error": "Not authenticated", "code": "AUTH_REQUIRED"})
-        token = authorization[7:]
-        session = SESSIONS.get(token)
-        if session:
-            user, expires = session
-            if expires > datetime.now(timezone.utc):
-                return user
-            SESSIONS.pop(token, None)
-        raise HTTPException(401, {"error": "Not authenticated", "code": "AUTH_REQUIRED"})
-    user_id = request.headers.get("x-user-id") or request.query_params.get("userId")
-    email = request.headers.get("x-user-email") or request.query_params.get("email")
-    role = request.headers.get("x-user-role") or request.query_params.get("role")
-    row = None
-    if user_id:
-        row = db.get(RegisteredUser, user_id)
-    elif email:
-        row = next((x for x in db.query(RegisteredUser).all() if x.payload.get("email", "").lower() == email.lower()), None)
-    elif role:
-        row = next((x for x in db.query(RegisteredUser).all() if x.payload.get("role") == role), None)
-    if row:
-        return entity_payload(row)
-    fallback = next((x for x in db.query(RegisteredUser).all() if x.payload.get("role") == "Agent"), None)
-    return entity_payload(fallback) if fallback else {"id": "", "name": "", "email": "", "role": "Agent"}
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    token = authorization[7:]
+    if not token:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    session = SESSIONS.get(token)
+    if session:
+        user, expires = session
+        if expires > datetime.now(timezone.utc):
+            return user
+        SESSIONS.pop(token, None)
+    raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 def require_roles(*roles: str):
@@ -194,7 +181,11 @@ def register(body: dict[str, Any], request: Request, db: Session = Depends(db_se
     if any(x.payload.get("email", "").lower() == normalized for x in db.query(RegisteredUser).all()):
         raise HTTPException(409, {"error": f"An account with email '{normalized}' already exists. Please sign in instead.", "code": "EMAIL_ALREADY_EXISTS"})
     parts = name.strip().split()
-    requester = current_user(request, db)
+    requester = {}
+    try:
+        requester = current_user(request, db)
+    except HTTPException:
+        pass
     valid_roles = {"Customer", "Agent", "Reviewer", "Manager", "Administrator"}
     assigned_role = body.get("role") if requester.get("role") == "Administrator" and body.get("role") in valid_roles else "Customer"
     user = {

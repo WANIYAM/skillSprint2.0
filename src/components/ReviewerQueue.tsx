@@ -34,19 +34,19 @@ export const ReviewerQueue: React.FC<ReviewerQueueProps> = ({
   departments,
 }) => {
   // Filter for cases requiring manual review or with low verification scores
-  const queueCases = complaints.filter(
+  const queueCases = (complaints ?? []).filter(
     (c) =>
       c.comparisonResult?.verificationStatus === 'Manual Review' ||
       (c.comparisonResult && c.comparisonResult.verificationScore < 85) ||
-      (c.pipeline2Output && c.pipeline2Output.adversarialPromptFlags.length > 0) ||
-      (c.pipeline2Output && c.pipeline2Output.unsupportedPromiseFlags.length > 0)
+      (c.pipeline2Output && (c.pipeline2Output.adversarialPromptFlags || []).length > 0) ||
+      (c.pipeline2Output && (c.pipeline2Output.unsupportedPromiseFlags || []).length > 0)
   );
 
   const [selectedId, setSelectedId] = useState<string | null>(
-    queueCases.length > 0 ? queueCases[0].id : null
+    (queueCases ?? []).length > 0 ? queueCases[0].id : null
   );
 
-  const selected = complaints.find((c) => c.id === selectedId);
+  const selected = (complaints ?? []).find((c) => c.id === selectedId);
 
   // Reviewer Modification Inputs
   const [overrideDept, setOverrideDept] = useState('');
@@ -161,8 +161,8 @@ export const ReviewerQueue: React.FC<ReviewerQueueProps> = ({
             queueCases.map((item) => {
               const isSelected = item.id === selectedId;
               const score = item.comparisonResult?.verificationScore ?? 0;
-              const hasAdversarial = (item.pipeline2Output?.adversarialPromptFlags.length ?? 0) > 0;
-              const hasUnsupported = (item.pipeline2Output?.unsupportedPromiseFlags.length ?? 0) > 0;
+              const hasAdversarial = (item.pipeline2Output?.adversarialPromptFlags?.length ?? 0) > 0;
+              const hasUnsupported = (item.pipeline2Output?.unsupportedPromiseFlags?.length ?? 0) > 0;
 
               return (
                 <div
@@ -202,7 +202,7 @@ export const ReviewerQueue: React.FC<ReviewerQueueProps> = ({
                   <div className="text-[11px] text-slate-400 flex items-center justify-between mt-2">
                     <span className="truncate max-w-[170px]">{item.customerName}</span>
                     <span className="text-rose-400 font-mono text-[10px]">
-                      {item.comparisonResult?.discrepancies.length || 0} issues
+                      {item.comparisonResult?.discrepancies?.length || 0} issues
                     </span>
                   </div>
                 </div>
@@ -353,7 +353,7 @@ export const ReviewerQueue: React.FC<ReviewerQueueProps> = ({
                         <span className="text-[10px] text-slate-500 uppercase block">Adversarial Threats</span>
                         <span className={(selected.pythonValidation?.adversarialThreats?.length || 0) > 0 ? 'text-rose-400 font-bold' : 'text-slate-400'}>
                           {(selected.pythonValidation?.adversarialThreats?.length || 0) > 0
-                            ? `${selected.pythonValidation?.adversarialThreats.length} detected`
+                            ? `${selected.pythonValidation?.adversarialThreats?.length} detected`
                             : 'None detected'}
                         </span>
                       </div>
@@ -411,11 +411,11 @@ export const ReviewerQueue: React.FC<ReviewerQueueProps> = ({
                 </div>
 
                 {/* Discrepancies Bar */}
-                {selected.comparisonResult?.discrepancies && selected.comparisonResult.discrepancies.length > 0 && (
+                {selected.comparisonResult?.discrepancies && (selected.comparisonResult.discrepancies || []).length > 0 && (
                   <div className="bg-amber-950/30 border-t border-amber-500/30 p-3 text-xs text-amber-200">
                     <span className="font-bold block mb-1">Comparison Engine Flags:</span>
                     <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
-                      {selected.comparisonResult.discrepancies.map((d, i) => (
+                      {(selected.comparisonResult.discrepancies || []).map((d, i) => (
                         <li key={i}>{d}</li>
                       ))}
                     </ul>

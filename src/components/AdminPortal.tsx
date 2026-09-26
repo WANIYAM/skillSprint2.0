@@ -67,10 +67,10 @@ interface AdminPortalProps {
 }
 
 export const AdminPortal: React.FC<AdminPortalProps> = ({
-  policies,
-  ruleMatrix,
-  promptTemplates,
-  testCases,
+  policies = [],
+  ruleMatrix = [],
+  promptTemplates = [],
+  testCases = [],
   users = [],
   onAddPolicy,
   onUpdatePolicy,
@@ -88,7 +88,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onAddUser,
   onUpdateUser,
   onDeleteUser,
-  departments,
+  departments = [],
 }) => {
   const [activeTab, setActiveTab] = useState<'policies' | 'ruleMatrix' | 'prompts' | 'security' | 'users'>('policies');
 
@@ -309,7 +309,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               }`}
             >
               <BookOpen className="w-3.5 h-3.5" />
-              <span>Policies ({policies.length})</span>
+              <span>Policies ({(policies ?? []).length})</span>
             </button>
 
             <button
@@ -321,7 +321,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               }`}
             >
               <Grid className="w-3.5 h-3.5" />
-              <span>Rule Matrix ({ruleMatrix.length})</span>
+              <span>Rule Matrix ({(ruleMatrix ?? []).length})</span>
             </button>
 
             <button
@@ -357,7 +357,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               }`}
             >
               <Users className="w-3.5 h-3.5" />
-              <span>Users & RBAC ({users.length})</span>
+              <span>Users & RBAC ({(users ?? []).length})</span>
             </button>
           </div>
         </div>
@@ -599,7 +599,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
           {/* Policy Document Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {policies.map((pol) => (
+            {(policies ?? []).map((pol) => (
               <div
                 key={pol.id}
                 className={`bg-slate-800/60 border rounded-xl p-5 space-y-3 transition ${
@@ -699,7 +699,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <div className="space-y-1.5 pt-2 border-t border-slate-700/60">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Traceable Chunks ({pol.sections.length})
+                      Traceable Chunks ({(pol.sections ?? []).length})
                     </span>
                     <button
                       onClick={() => setInspectPolicyChunks(pol)}
@@ -708,7 +708,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       Inspect All Chunks
                     </button>
                   </div>
-                  {pol.sections.slice(0, 2).map((sec) => (
+                  {(pol.sections ?? []).slice(0, 2).map((sec) => (
                     <div
                       key={sec.id}
                       className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 text-xs"
@@ -726,24 +726,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       </p>
                     </div>
                   ))}
-                  {pol.sections.length > 2 && (
+                  {(pol.sections ?? []).length > 2 && (
                     <button
                       onClick={() => setInspectPolicyChunks(pol)}
                       className="w-full text-center text-[10px] text-slate-400 hover:text-slate-300 py-1 bg-slate-900/40 rounded border border-slate-800/80 cursor-pointer"
                     >
-                      +{pol.sections.length - 2} more chunks...
+                      +{(pol.sections ?? []).length - 2} more chunks...
                     </button>
                   )}
                 </div>
 
                 {/* Version History Accordion / List (Requirement x) */}
-                {pol.versionHistory && pol.versionHistory.length > 0 && (
+                {(pol.versionHistory ?? []).length > 0 && (
                   <div className="pt-2 border-t border-slate-700/60 space-y-1.5">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Version History ({pol.versionHistory.length} previous)
+                      Version History ({(pol.versionHistory ?? []).length} previous)
                     </span>
                     <div className="space-y-1 max-h-28 overflow-y-auto">
-                      {pol.versionHistory.map((vh, vIdx) => (
+                      {(pol.versionHistory ?? []).map((vh, vIdx) => (
                         <div
                           key={vIdx}
                           className="flex items-center justify-between p-1.5 bg-slate-900/40 rounded border border-slate-800/60 text-[10px]"
@@ -783,7 +783,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <span>Traceable Chunks: {inspectPolicyChunks.title} (v{inspectPolicyChunks.version})</span>
                 </h3>
                 <span className="text-xs text-slate-400">
-                  {inspectPolicyChunks.sections.length} deterministic chunks indexed for retrieval
+                  {(inspectPolicyChunks.sections ?? []).length} deterministic chunks indexed for retrieval
                 </span>
               </div>
               <button
@@ -794,7 +794,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </button>
             </div>
             <div className="p-5 overflow-y-auto space-y-3 flex-1">
-              {inspectPolicyChunks.sections.map((sec, idx) => (
+              {(inspectPolicyChunks.sections ?? []).map((sec, idx) => (
                 <div key={sec.id || idx} className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-xs font-bold text-blue-400">
@@ -857,7 +857,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
           {/* Template Selector Tabs */}
           <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-700/40">
-            {promptTemplates.map((tpl) => (
+            {(promptTemplates ?? []).map((tpl) => (
               <button
                 key={tpl.id}
                 onClick={() => setSelectedPromptId(tpl.id)}
@@ -908,11 +908,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
 
               {/* Variables Placeholders Badge */}
-              {activePrompt.variables && activePrompt.variables.length > 0 && (
+              {(activePrompt.variables ?? []).length > 0 && (
                 <div className="flex items-center space-x-2 text-xs bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
                   <span className="text-[10px] uppercase font-bold text-slate-400">Available Variables:</span>
                   <div className="flex flex-wrap gap-1.5">
-                    {activePrompt.variables.map((v) => (
+                    {(activePrompt.variables ?? []).map((v) => (
                       <span key={v} className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 font-mono text-[10px] text-blue-300">
                         {`{${v}}`}
                       </span>
@@ -969,13 +969,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
 
               {/* Version History Timeline (Requirement liii) */}
-              {activePrompt.history && activePrompt.history.length > 0 && (
+              {(activePrompt.history ?? []).length > 0 && (
                 <div className="pt-4 border-t border-slate-700/60 space-y-2">
                   <span className="text-xs font-bold text-white flex items-center space-x-1.5">
-                    <span>Version History Timeline ({activePrompt.history.length} versions)</span>
+                    <span>Version History Timeline ({(activePrompt.history ?? []).length} versions)</span>
                   </span>
                   <div className="space-y-2 max-h-56 overflow-y-auto">
-                    {activePrompt.history.map((h, hIdx) => (
+                    {(activePrompt.history ?? []).map((h, hIdx) => (
                       <div
                         key={hIdx}
                         className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex items-center justify-between text-xs"
@@ -1264,7 +1264,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {ruleMatrix.map((rule) => (
+                  {(ruleMatrix ?? []).map((rule) => (
                     <tr key={rule.id} className="hover:bg-slate-800/40 transition">
                       <td className="py-2.5 px-3 font-mono font-semibold text-emerald-400">
                         {rule.id}
@@ -1391,7 +1391,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
-              {testCases.map((tc) => {
+              {(testCases ?? []).map((tc) => {
                 const isRunning = runningTestId === tc.id;
                 return (
                   <div
@@ -1499,8 +1499,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     Pipeline 2 (Rule Matrix) Defense
                   </span>
                   <div className="space-y-1">
-                    <div>Adversarial Flags: <strong className="text-purple-400">{testResult.pipeline2Output.adversarialPromptFlags.length}</strong></div>
-                    <div>Bad Promises Flagged: <strong className="text-rose-400">{testResult.pipeline2Output.unsupportedPromiseFlags.length}</strong></div>
+                    <div>Adversarial Flags: <strong className="text-purple-400">{(testResult.pipeline2Output.adversarialPromptFlags ?? []).length}</strong></div>
+                    <div>Bad Promises Flagged: <strong className="text-rose-400">{(testResult.pipeline2Output.unsupportedPromiseFlags ?? []).length}</strong></div>
                     <div>Mandatory Escalation: <strong className="text-white">{testResult.pipeline2Output.mandatoryEscalation ? 'YES' : 'No'}</strong></div>
                   </div>
                 </div>
@@ -1547,7 +1547,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           {/* Role Counts Summary */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {(['Customer', 'Agent', 'Reviewer', 'Manager', 'Administrator'] as UserRole[]).map((r) => {
-              const count = users.filter((u) => u.role === r).length;
+              const count = (users ?? []).filter((u) => u.role === r).length;
               return (
                 <div
                   key={r}
@@ -1753,7 +1753,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 text-slate-200">
-                  {users
+                  {(users ?? [])
                     .filter((u) => {
                       if (userRoleFilter !== 'All' && u.role !== userRoleFilter) return false;
                       if (!userSearch.trim()) return true;

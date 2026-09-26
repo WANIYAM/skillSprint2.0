@@ -89,7 +89,7 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
             { id: 'python', label: 'Python Crosscheck' },
             { id: 'pipeline2', label: 'Pipeline 2 (Rule Matrix)' },
             { id: 'policies', label: 'Policy Traceability' },
-            { id: 'audit', label: `Audit Trail (${complaint.auditTrail.length})` },
+            { id: 'audit', label: `Audit Trail (${(complaint.auditTrail ?? []).length})` },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -203,17 +203,17 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
                     Pipeline 1 GenAI Assessment
                   </span>
                   <div>Primary Issue: <strong className="text-white">{p1?.primaryIssue}</strong></div>
-                  {p1?.secondaryIssues && p1.secondaryIssues.length > 0 && (
+                  {p1?.secondaryIssues && (p1.secondaryIssues || []).length > 0 && (
                     <div className="text-[11px] text-slate-300">
-                      Secondary Issues: <span className="text-slate-200 font-medium">{p1.secondaryIssues.join(', ')}</span>
+                      Secondary Issues: <span className="text-slate-200 font-medium">{(p1.secondaryIssues || []).join(', ')}</span>
                     </div>
                   )}
                   <div>Category: <strong className="text-white">{p1?.category}</strong> ({p1?.subcategory})</div>
                   <div>
                     Routing: <strong className="text-blue-300">{p1?.recommendedDepartment}</strong>
-                    {p1?.secondaryDepartments && p1.secondaryDepartments.length > 0 && (
+                    {p1?.secondaryDepartments && (p1.secondaryDepartments || []).length > 0 && (
                       <span className="text-slate-400 text-[10px] ml-1.5">
-                        (Also: {p1.secondaryDepartments.join(', ')})
+                        (Also: {(p1.secondaryDepartments || []).join(', ')})
                       </span>
                     )}
                   </div>
@@ -236,19 +236,19 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
                   <div>Expected Urgency / Pri: <strong className="text-white">{p2?.expectedUrgency} ({p2?.expectedPriority})</strong></div>
                   <div>Mandatory Escalation: <strong className="text-rose-300">{p2?.mandatoryEscalation ? `MANDATORY (${p2.mandatoryEscalationTier})` : 'No'}</strong></div>
                   <div className="text-[11px] text-slate-400">
-                    Matched Rules: <span className="text-slate-200 font-mono">{p2?.matchedRules.join(', ') || 'Standard SLA'}</span>
+                    Matched Rules: <span className="text-slate-200 font-mono">{(p2?.matchedRules || []).join(', ') || 'Standard SLA'}</span>
                   </div>
                 </div>
               </div>
 
               {/* Discrepancies list */}
-              {comp?.discrepancies && comp.discrepancies.length > 0 && (
+              {comp?.discrepancies && (comp.discrepancies || []).length > 0 && (
                 <div className="bg-slate-800/40 p-4 rounded-xl border border-amber-500/30">
                   <span className="font-bold text-amber-300 block mb-2">
-                    Discrepancy & Safety Inspection Report ({comp.discrepancies.length})
+                    Discrepancy & Safety Inspection Report ({(comp.discrepancies || []).length})
                   </span>
                   <ul className="list-disc pl-4 space-y-1 text-slate-300">
-                    {comp.discrepancies.map((d, i) => (
+                    {(comp.discrepancies || []).map((d, i) => (
                       <li key={i}>{d}</li>
                     ))}
                   </ul>
@@ -286,13 +286,13 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
                 </p>
               </div>
 
-              {complaint.pythonValidation?.findings && complaint.pythonValidation.findings.length > 0 && (
+              {complaint.pythonValidation?.findings && (complaint.pythonValidation.findings || []).length > 0 && (
                 <div className="bg-slate-800/40 p-4 rounded-xl border border-rose-500/30 space-y-2">
                   <span className="font-bold text-rose-300 block mb-1">
-                    Python Findings & Divergences ({complaint.pythonValidation.findings.length})
+                    Python Findings & Divergences ({(complaint.pythonValidation.findings || []).length})
                   </span>
                   <div className="space-y-1.5">
-                    {complaint.pythonValidation.findings.map((f, i) => (
+                    {(complaint.pythonValidation.findings || []).map((f, i) => (
                       <div key={i} className="p-2 rounded bg-slate-900/60 border border-slate-800 text-[11px] text-slate-200">
                         <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 mr-2">
                           {f.severity}
@@ -334,9 +334,9 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
                 Cited Knowledge Base Policies for this Complaint
               </span>
 
-              {p1?.citedPolicies && p1.citedPolicies.length > 0 ? (
-                p1.citedPolicies.map((cp, idx) => {
-                  const fullDoc = policies.find((p) => p.id === cp.docId);
+              {p1?.citedPolicies && (p1.citedPolicies || []).length > 0 ? (
+                (p1.citedPolicies || []).map((cp, idx) => {
+                  const fullDoc = (policies || []).find((p) => p.id === cp.docId);
                   return (
                     <div key={idx} className="bg-slate-800/60 p-4 rounded-xl border border-slate-700 space-y-2">
                       <div className="flex items-center justify-between">
@@ -371,7 +371,7 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
                 Immutable Lifecycle Audit Log
               </span>
               <div className="relative border-l-2 border-slate-800 pl-4 ml-2 space-y-4">
-                {complaint.auditTrail.map((log) => (
+                {(complaint.auditTrail || []).map((log) => (
                   <div key={log.id} className="relative">
                     <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-blue-500 ring-4 ring-slate-900" />
                     <div className="text-[10px] text-slate-400 font-mono">

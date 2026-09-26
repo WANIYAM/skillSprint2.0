@@ -49,7 +49,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'submit' | 'history' | 'faqs'>('submit');
   const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(
-    complaints.length > 0 ? complaints[0].id : null
+    (complaints ?? []).length > 0 ? complaints[0].id : null
   );
 
   // Form State
@@ -91,12 +91,12 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   }, [currentUser]);
 
   useEffect(() => {
-    if (complaints.length > 0 && !selectedComplaintId) {
+    if ((complaints ?? []).length > 0 && !selectedComplaintId) {
       setSelectedComplaintId(complaints[0].id);
     }
   }, [complaints, selectedComplaintId]);
 
-  const selectedComplaint = complaints.find((c) => c.id === selectedComplaintId);
+  const selectedComplaint = (complaints ?? []).find((c) => c.id === selectedComplaintId);
 
   const handleFillTemplate = (type: 'battery' | 'billing' | 'adversarial' | 'lateReturn') => {
     if (type === 'battery') {
@@ -303,7 +303,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             >
               <span>My Tickets</span>
               <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-700 text-slate-200 font-bold">
-                {complaints.length}
+                {(complaints ?? []).length}
               </span>
             </button>
 
@@ -608,14 +608,14 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
           {/* Complaints list */}
           <div className="space-y-3">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-              Your Submissions ({complaints.length})
+              Your Submissions ({(complaints ?? []).length})
             </h3>
-            {complaints.length === 0 ? (
+            {(complaints ?? []).length === 0 ? (
               <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-8 text-center text-slate-400 text-xs">
                 No complaints submitted yet for this account.
               </div>
             ) : (
-              complaints.map((c) => {
+              (complaints ?? []).map((c) => {
                 const isSelected = c.id === selectedComplaintId;
 
                 return (
@@ -842,7 +842,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   </h3>
 
                   <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-                    {selectedComplaint.messages.map((msg) => {
+                    {(selectedComplaint.messages || []).map((msg) => {
                       const isCustomer = msg.sender === 'Customer';
                       return (
                         <div

@@ -143,29 +143,27 @@ export default function App() {
 
         if (compRes && compRes.ok) {
           const data = await compRes.json();
-          setComplaints(data.complaints || []);
+          setComplaints(data?.complaints ?? []);
         }
         if (polRes && polRes.ok) {
           const data = await polRes.json();
-          setPolicies(data.policies || []);
+          setPolicies(data?.policies ?? []);
         }
         if (ruleRes && ruleRes.ok) {
           const data = await ruleRes.json();
-          setRuleMatrix(data.ruleMatrix || []);
+          setRuleMatrix(data?.ruleMatrix ?? []);
         }
         if (promptRes && promptRes.ok) {
           const data = await promptRes.json();
-          setPromptTemplates(data.promptTemplates || []);
+          setPromptTemplates(data?.promptTemplates ?? []);
         }
         if (testRes && testRes.ok) {
           const data = await testRes.json();
-          setTestCases(data.testCases || []);
+          setTestCases(data?.testCases ?? []);
         }
         if (userRes && userRes.ok) {
           const data = await userRes.json();
-          if (data.users && data.users.length > 0) {
-            setUsers(data.users);
-          }
+          setUsers(data?.users ?? []);
         }
       } catch (err) {
         console.error('Failed to load SupportNova data from API:', err);
@@ -189,7 +187,6 @@ export default function App() {
     localStorage.setItem('supportnova_auth_user', JSON.stringify(user));
     localStorage.setItem('supportnova_auth_token', token);
     showNotification('success', `Welcome back, ${user.name}! Accessing ${user.role} workspace.`);
-    fetchData(user);
   };
 
   // Sign Out Handler (Requirement 20: Clean Logout)
@@ -413,7 +410,7 @@ export default function App() {
       const polRes = await apiFetch('/api/knowledge-base');
       if (polRes.ok) {
         const polData = await polRes.json();
-        setPolicies(polData.policies);
+        setPolicies(polData?.policies ?? []);
       }
       showNotification('success', data.message || `Document parsed into ${data.chunkCount} traceable sections.`);
       return data;
