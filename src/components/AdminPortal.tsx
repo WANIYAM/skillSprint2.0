@@ -129,9 +129,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // Document File Upload State (Requirements vi, vii, viii, ix, x)
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadDocumentId, setUploadDocumentId] = useState(() => `POL-UPL-${Date.now().toString(36).toUpperCase()}`);
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadCategory, setUploadCategory] = useState('Customer Support & SLA');
   const [uploadVersion, setUploadVersion] = useState('1.0');
+  const [uploadEffectiveDate, setUploadEffectiveDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [uploadExpiryDate, setUploadExpiryDate] = useState('');
   const [uploadParsing, setUploadParsing] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccessInfo, setUploadSuccessInfo] = useState<any | null>(null);
@@ -168,6 +171,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       setUploadError('Please select a valid PDF, DOCX, or TXT file to upload.');
       return;
     }
+    if (uploadFile.size === 0) {
+      setUploadError('The selected file is empty.');
+      return;
+    }
+    if (uploadFile.size > 10 * 1024 * 1024) {
+      setUploadError('File size exceeds the 10 MB limit.');
+      return;
+    }
+    if (uploadExpiryDate && uploadExpiryDate <= uploadEffectiveDate) {
+      setUploadError('Expiry date must be later than the effective date.');
+      return;
+    }
 
     setUploadParsing(true);
     setUploadError(null);
@@ -183,11 +198,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               filename: uploadFile.name,
               fileBase64: base64Data,
               title: uploadTitle || uploadFile.name.replace(/\.[^/.]+$/, ''),
+              documentId: uploadDocumentId,
               category: uploadCategory,
               version: uploadVersion,
+              effectiveDate: uploadEffectiveDate,
+              expiryDate: uploadExpiryDate || null,
             });
             setUploadSuccessInfo(res);
             setUploadFile(null);
+            setUploadDocumentId(`POL-UPL-${Date.now().toString(36).toUpperCase()}`);
             setUploadTitle('');
             setTimeout(() => {
               setIsUploadingDoc(false);
@@ -443,6 +462,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
+                      const extension = file.name.split('.').pop()?.toLowerCase();
+                      if (!['pdf', 'docx', 'doc', 'txt', 'md'].includes(extension || '')) {
+                        setUploadFile(null);
+                        setUploadError('Unsupported file type. Select PDF, DOCX, DOC, TXT, or MD.');
+                        return;
+                      }
+                      if (file.size === 0 || file.size > 10 * 1024 * 1024) {
+                        setUploadFile(null);
+                        setUploadError(file.size === 0 ? 'The selected file is empty.' : 'File size exceeds the 10 MB limit.');
+                        return;
+                      }
+                      setUploadError(null);
                       setUploadFile(file);
                       if (!uploadTitle) {
                         setUploadTitle(file.name.replace(/\.[^/.]+$/, ''));
@@ -469,7 +500,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 </label>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <label className="block text-slate-300 mb-1">Document ID</label>
+                  <input
+                    type="text"
+                    value={uploadDocumentId}
+                    onChange={(e) => setUploadDocumentId(e.target.value)}
+                    required
+                    pattern="[A-Za-z0-9]+(-[A-Za-z0-9]+)*"
+                    maxLength={80}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                  />
+                </div>
                 <div>
                   <label className="block text-slate-300 mb-1">Document Title (Auto-inferred if blank)</label>
                   <input
@@ -497,6 +540,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     value={uploadVersion}
                     onChange={(e) => setUploadVersion(e.target.value)}
                     placeholder="2.0"
+                    required
+                    pattern="[0-9]+(\.[0-9]+){0,3}(-[A-Za-z0-9.-]+)?"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 mb-1">Effective Date</label>
+                  <input
+                    type="date"
+                    value={uploadEffectiveDate}
+                    onChange={(e) => setUploadEffectiveDate(e.target.value)}
+                    required
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 mb-1">Expiry Date (optional)</label>
+                  <input
+                    type="date"
+                    value={uploadExpiryDate}
+                    min={uploadEffectiveDate || undefined}
+                    onChange={(e) => setUploadExpiryDate(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
                   />
                 </div>

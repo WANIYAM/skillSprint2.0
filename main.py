@@ -5,7 +5,7 @@ import json
 import os
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from ai_pipeline import run_ai_pipeline
 from database import Base, SessionLocal, engine, init_db
+from dataset_expansion import expand_seed
 from models import Complaint, Policy, PromptTemplate, RegisteredUser, RuleMatrix
 from rule_engine import compare_outputs, run_rule_validation
 from validator import crosscheck_complaint_and_ai, validate_and_parse_document
@@ -81,6 +82,45 @@ def sanitize(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]*>?", "", value or "").replace("\u200b", "")).strip()
 
 
+def validate_policy_metadata(body: dict[str, Any], default_effective_date: str | None = None) -> dict[str, str | None]:
+    document_id = body.get("documentId", body.get("id", f"POL-UPL-{secrets.token_hex(5)}"))
+    if not isinstance(document_id, str) or not re.fullmatch(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", document_id.strip()) or len(document_id.strip()) > 80:
+        raise HTTPException(400, {"error": "Document ID must contain only letters, numbers, and single hyphens (maximum 80 characters).", "code": "INVALID_DOCUMENT_ID"})
+
+    version = body.get("version", "1.0")
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,3}(?:-[A-Za-z0-9.-]+)?", version.strip()):
+        raise HTTPException(400, {"error": "Version must use a numeric version such as 1.0 or 2.1.3.", "code": "INVALID_VERSION"})
+
+    category = body.get("category")
+    if not isinstance(category, str) or not category.strip() or len(category.strip()) > 120:
+        raise HTTPException(400, {"error": "Document category is required and must be 120 characters or fewer.", "code": "INVALID_CATEGORY"})
+
+    effective_raw = body.get("effectiveDate", default_effective_date or date.today().isoformat())
+    expiry_raw = body.get("expiryDate") or None
+    parsed_dates: dict[str, str | None] = {"effectiveDate": None, "expiryDate": None}
+    for field, value in (("effectiveDate", effective_raw), ("expiryDate", expiry_raw)):
+        if value is None and field == "expiryDate":
+            continue
+        try:
+            parsed = date.fromisoformat(value) if isinstance(value, str) else None
+        except ValueError:
+            parsed = None
+        if not parsed or parsed.isoformat() != value:
+            date_code = "INVALID_EFFECTIVE_DATE" if field == "effectiveDate" else "INVALID_EXPIRY_DATE"
+            raise HTTPException(400, {"error": f"{field} must be a valid ISO date in YYYY-MM-DD format.", "code": date_code})
+        parsed_dates[field] = parsed.isoformat()
+    if parsed_dates["expiryDate"] and parsed_dates["expiryDate"] <= parsed_dates["effectiveDate"]:
+        raise HTTPException(400, {"error": "Expiry date must be later than the effective date.", "code": "INVALID_EXPIRY_DATE"})
+
+    return {
+        "id": document_id.strip().upper(),
+        "version": version.strip(),
+        "category": category.strip(),
+        "effectiveDate": parsed_dates["effectiveDate"],
+        "expiryDate": parsed_dates["expiryDate"],
+    }
+
+
 def entity_payload(row: Any) -> dict[str, Any]:
     return dict(row.payload)
 
@@ -92,7 +132,7 @@ def find_row(db: Session, model: Any, key: str) -> Any:
 def load_seed() -> dict[str, list[dict[str, Any]]]:
     if not SEED_PATH.exists():
         return {"users": [], "complaints": [], "policies": [], "rules": [], "prompts": [], "testCases": []}
-    return json.loads(SEED_PATH.read_text(encoding="utf-8"))
+    return expand_seed(json.loads(SEED_PATH.read_text(encoding="utf-8")))
 
 
 def seed_database() -> None:
@@ -107,12 +147,13 @@ def seed_database() -> None:
             (PromptTemplate, seed.get("prompts", [])),
         ]
         for model, values in mappings:
-            if db.query(model).count() == 0:
-                for value in values:
-                    row = model(id=value["id"], payload=value)
-                    if model is RegisteredUser:
-                        row.password_hash = hash_password("demo")
-                    db.add(row)
+            for value in values:
+                if db.get(model, value["id"]):
+                    continue
+                row = model(id=value["id"], payload=value)
+                if model is RegisteredUser:
+                    row.password_hash = hash_password("demo")
+                db.add(row)
         db.commit()
     finally:
         db.close()
@@ -582,8 +623,10 @@ def upload_policy(body: dict[str, Any], user: dict[str, Any] = Depends(require_r
     raw_text = body.get("rawText")
     if not body.get("filename") and not raw_text:
         raise HTTPException(400, {"error": "File content (PDF/DOCX/TXT/MD) or filename is required", "code": "FILE_REQUIRED"})
+    if not isinstance(filename, str) or len(filename) > 255 or filename != filename.strip():
+        raise HTTPException(400, {"error": "Filename must be a valid name of 255 characters or fewer.", "code": "INVALID_FILENAME"})
     try:
-        contents = base64.b64decode(encoded) if encoded else str(raw_text).encode()
+        contents = base64.b64decode(encoded, validate=True) if encoded else str(raw_text or "").encode("utf-8")
     except Exception:
         raise HTTPException(400, {"error": "Invalid document encoding or corrupt file bytes.", "code": "CORRUPT_DOCUMENT"})
     if not contents:
@@ -593,39 +636,33 @@ def upload_policy(body: dict[str, Any], user: dict[str, Any] = Depends(require_r
     extension = filename.lower().rsplit(".", 1)[-1] if "." in filename else "txt"
     if extension not in {"pdf", "docx", "doc", "txt", "md"}:
         raise HTTPException(400, {"error": f"Unsupported file format '.{extension}'. Allowed formats: PDF, DOCX, TXT, MD.", "code": "UNSUPPORTED_FORMAT"})
-    parsed = validate_and_parse_document({"filename": filename, "fileContentBase64": base64.b64encode(contents).decode(), "title": body.get("title"), "category": body.get("category"), "version": body.get("version", "1.0")})
-    document_id = f"POL-UPL-{secrets.token_hex(5)}"
-    document_title = parsed.get("title") or body.get("title") or filename.rsplit(".", 1)[0]
-    document_version = body.get("version", "1.0")
-    document_date = datetime.now(timezone.utc).date().isoformat()
+    signatures = {"pdf": contents.startswith(b"%PDF-"), "docx": contents.startswith(b"PK\x03\x04"), "doc": contents.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")}
+    if extension in signatures and not signatures[extension]:
+        raise HTTPException(400, {"error": f"File content does not match the .{extension} file type.", "code": "FILE_TYPE_MISMATCH"})
+    if extension in {"txt", "md"}:
+        try:
+            contents.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(400, {"error": "Text documents must contain valid UTF-8 text.", "code": "FILE_TYPE_MISMATCH"})
+        if b"\x00" in contents:
+            raise HTTPException(400, {"error": "Text documents cannot contain binary data.", "code": "FILE_TYPE_MISMATCH"})
+
+    metadata = validate_policy_metadata(body, datetime.now(timezone.utc).date().isoformat())
+    document_id = metadata["id"]
+    if db.get(Policy, document_id):
+        raise HTTPException(409, {"error": f"Document ID '{document_id}' already exists.", "code": "DUPLICATE_DOCUMENT_ID"})
+    checksum = hashlib.sha256(contents).hexdigest()
+    if any(row.payload.get("checksum") == checksum[:16] for row in db.query(Policy).all()):
+        raise HTTPException(409, {"error": "This document has already been uploaded.", "code": "DUPLICATE_DOCUMENT"})
+
+    parsed = validate_and_parse_document({"filename": filename, "fileContentBase64": base64.b64encode(contents).decode(), "title": body.get("title"), "category": metadata["category"], "version": metadata["version"]})
     if not parsed.get("valid"):
-        invalid_policy = {
-            "id": document_id,
-            "title": document_title,
-            "category": body.get("category") or "Unclassified SOP",
-            "version": document_version or "0.1",
-            "status": "Draft",
-            "processingStatus": "INVALID",
-            "filename": filename,
-            "fileType": extension.upper(),
-            "fileSize": len(contents),
-            "checksum": hashlib.sha256(contents).hexdigest()[:16],
-            "uploadedBy": user.get("name") or "Administrator",
-            "effectiveDate": document_date,
-            "summary": f"Document validation failed: {parsed.get('error', 'Parsing error')}",
-            "validationDetails": {
-                "isValid": False,
-                "checkedAt": now(),
-                "errors": [parsed.get("error", "Failed to extract structured text from document binary.")],
-                "warnings": [],
-            },
-            "sections": [],
-        }
-        db.add(Policy(id=document_id, payload=invalid_policy))
-        db.commit()
-        raise HTTPException(422, {"success": False, "error": parsed.get("error", "Document validation failed."), "document": invalid_policy})
-    document_version = parsed.get("version", document_version)
+        raise HTTPException(422, {"success": False, "error": parsed.get("error", "Document validation failed."), "code": "DOCUMENT_PARSE_FAILED"})
+    document_title = parsed.get("title") or body.get("title") or filename.rsplit(".", 1)[0]
+    document_version = metadata["version"]
     same_title = [row for row in db.query(Policy).all() if row.payload.get("title", "").lower() == document_title.lower()]
+    if any(row.payload.get("version") == document_version for row in same_title):
+        raise HTTPException(409, {"error": f"Document '{document_title}' version {document_version} already exists.", "code": "DUPLICATE_DOCUMENT_VERSION"})
     existing = next((row for row in same_title if row.payload.get("status") == "Active"), None)
     existing = existing or (same_title[0] if same_title else None)
     version_history = []
@@ -646,7 +683,7 @@ def upload_policy(body: dict[str, Any], user: dict[str, Any] = Depends(require_r
                 "updatedAt": now(),
             },
         ]
-    policy = {"id": document_id, "title": document_title, "category": parsed.get("category", "Customer Support & Operations"), "version": document_version, "status": "Active", "processingStatus": "PARSED", "effectiveDate": document_date, "summary": parsed.get("summary", ""), "filename": filename, "fileType": extension.upper(), "fileSize": len(contents), "checksum": hashlib.sha256(contents).hexdigest()[:16], "sections": parsed.get("sections", []), "versionHistory": version_history}
+    policy = {"id": document_id, "title": document_title, "category": metadata["category"], "version": document_version, "status": "Active", "processingStatus": "PARSED", "effectiveDate": metadata["effectiveDate"], "expiryDate": metadata["expiryDate"], "summary": parsed.get("summary", ""), "filename": filename, "fileType": extension.upper(), "fileSize": len(contents), "checksum": checksum[:16], "uploadedBy": user.get("name") or "Administrator", "sections": parsed.get("sections", []), "versionHistory": version_history}
     db.add(Policy(id=policy["id"], payload=policy))
     db.commit()
     return {"success": True, "policy": policy, "chunkCount": len(policy["sections"]), "fileType": extension.upper(), "fileSize": len(contents), "checksum": policy["checksum"], "message": f"Document '{policy['title']}' parsed into {len(policy['sections'])} traceable chunks and indexed under version {policy['version']} as trusted ground-truth."}
@@ -663,15 +700,23 @@ def save_policy(body: dict[str, Any], policy_id: str | None = None, _: dict[str,
             raise HTTPException(404, {"error": "Policy not found"})
         row.payload = {**row.payload, **body}
     else:
-        identifier = f"POL-{secrets.token_hex(5)}"
+        metadata = validate_policy_metadata(body)
+        identifier = metadata["id"]
+        if db.get(Policy, identifier):
+            raise HTTPException(409, {"error": f"Document ID '{identifier}' already exists.", "code": "DUPLICATE_DOCUMENT_ID"})
+        title = body["title"].strip()
+        if any(item.payload.get("title", "").lower() == title.lower() and item.payload.get("version") == metadata["version"] for item in db.query(Policy).all()):
+            raise HTTPException(409, {"error": f"Document '{title}' version {metadata['version']} already exists.", "code": "DUPLICATE_DOCUMENT_VERSION"})
         policy = {
             **body,
             "id": identifier,
-            "category": body.get("category") or "Customer Support",
-            "version": body.get("version", "1.0"),
+            "title": title,
+            "category": metadata["category"],
+            "version": metadata["version"],
             "status": "Active",
             "processingStatus": "PARSED",
-            "effectiveDate": datetime.now(timezone.utc).date().isoformat(),
+            "effectiveDate": metadata["effectiveDate"],
+            "expiryDate": metadata["expiryDate"],
             "sections": body.get("sections") or [{"id": "SEC-01", "heading": "General Terms", "content": body["summary"]}],
         }
         row = Policy(id=identifier, payload=policy)

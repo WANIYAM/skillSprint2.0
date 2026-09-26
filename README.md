@@ -259,6 +259,68 @@ python3 -c "import validator; print('Python Validator OK')"
 
 ---
 
+## 🧭 How the Platform Works
+
+SupportNova is designed like a structured support and governance system. The core idea is simple: a customer reports a problem, the system analyzes it using AI, then a second rule-based system checks whether the AI decision matches company policies and operational rules. If the two outputs disagree, the complaint is sent to a human reviewer for approval or correction.
+
+This creates a clear operating flow:
+
+1. A customer submits a complaint.
+2. Pipeline 1 uses AI to understand the issue, classify it, detect urgency, and draft a suitable support response.
+3. Pipeline 2 compares that result against the company’s rule matrix, policy rules, and business logic.
+4. The system checks for risk, policy conflicts, duplication, or adversarial content.
+5. If something is uncertain, it goes to the reviewer queue.
+6. The manager tracks performance, SLA risk, and trend data.
+7. The administrator manages the knowledge base, user access, and system configuration.
+
+In simple terms, the app is not just a complaint form. It is a full decision-making system that combines AI, business rules, human oversight, and role-based permissions.
+
+---
+
+## 👥 Role-by-Role Access Overview
+
+SupportNova uses role-based access control so each user sees only the part of the platform relevant to their job. The app is designed to keep responsibilities clean and prevent role leakage.
+
+### Customer
+The Customer role is the end-user side of the platform. Customers can submit complaints, describe the issue, attach supporting information, track the status of their own cases, send follow-up messages, ask for escalation, and leave feedback after resolution.
+
+Their main objective is simple: report a problem and get a fair, timely response.
+
+They are not allowed to view other customers’ complaints, manage policies, edit rules, or access internal operational dashboards.
+
+### Agent
+The Agent role is the frontline support team. Agents work with the active complaint queue, filter tickets by department and status, open individual cases, review the AI output, prepare responses, update statuses, and resolve or escalate cases when needed.
+
+Their main objective is to solve support issues quickly and correctly while following company procedures.
+
+They can view and work on complaints, but they do not control the organization-wide knowledge base or final governance decisions.
+
+### Reviewer
+The Reviewer role acts as the quality control layer. Reviewers check high-risk or ambiguous complaints where the AI result may conflict with policy or where prompt injection, unsupported promises, or low-confidence outputs are detected.
+
+They can approve, reject, modify, reclassify, or escalate cases after reviewing the full comparison matrix. They may also overwrite the assigned department, category, urgency, or drafted response when needed.
+
+Their main objective is to protect quality, compliance, and customer trust by catching errors before they affect the customer experience.
+
+### Manager
+The Manager role focuses on business-wide monitoring. Managers review complaint volume, departmental load, SLA risk, escalation rates, resolution performance, and AI-rule alignment rates.
+
+Their main objective is to keep support operations efficient, healthy, and compliant with service expectations.
+
+They can view operational insights and export reports, but they are not the system owners and do not manage the deeper technical configuration of the platform.
+
+### Administrator
+The Administrator role is the system owner and governance layer. Administrators manage the knowledge base, upload policy documents, update the rule matrix, edit AI prompt templates, run security tests, and create or update user accounts.
+
+Their main objective is to maintain the system so it remains accurate, secure, and operationally effective.
+
+This is the most powerful role in the system, and it has access to the full technical control layer.
+
+### Why this matters
+The app is built to ensure every role is given only the access needed for their job. This makes the platform safer, easier to use, and more realistic for enterprise support operations.
+
+---
+
 ## 👥 User Roles & Demo Personas
 
 Use the **Role Selector** dropdown in the top navigation bar to seamlessly experience the platform as different personas:
