@@ -55,28 +55,37 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-          <div className="max-w-xl w-full bg-slate-900 border border-rose-500/30 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-rose-950/40">
+        <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#F0EFEA' }}>
+          <div
+            className="max-w-xl w-full rounded-2xl p-6 sm:p-8 shadow-2xl"
+            style={{ background: '#FFFFFF', border: '1px solid rgba(210, 21, 21, 0.3)' }}
+          >
             <div className="flex items-center space-x-3 mb-4">
-              <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shrink-0">
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                style={{ background: 'rgba(210, 21, 21, 0.08)', border: '1px solid rgba(210, 21, 21, 0.25)', color: '#D21515' }}
+              >
                 <AlertOctagon className="w-6 h-6" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-slate-100">
+                <h1 className="text-lg font-bold" style={{ color: '#171717' }}>
                   Application Runtime Exception
                 </h1>
-                <p className="text-xs text-rose-400/90 font-medium">
+                <p className="text-xs font-medium" style={{ color: '#D21515' }}>
                   SupportNova Resilience Engine &bull; Error Boundary Intercepted
                 </p>
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+            <p className="text-xs mb-4 leading-relaxed" style={{ color: '#3A3A3A' }}>
               An unexpected render or runtime exception occurred. The application state has been safely isolated to prevent unhandled data corruption.
             </p>
 
             {this.state.error && (
-              <div className="mb-5 p-3 rounded-lg bg-rose-950/30 border border-rose-800/40 text-rose-200 text-xs font-mono break-words">
+              <div
+                className="mb-5 p-3 rounded-lg text-xs font-mono break-words"
+                style={{ background: 'rgba(210, 21, 21, 0.06)', border: '1px solid rgba(210, 21, 21, 0.2)', color: '#D21515' }}
+              >
                 {this.state.error.message || 'Unknown runtime error'}
               </div>
             )}
@@ -84,7 +93,8 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="flex flex-wrap gap-2.5 mb-4">
               <button
                 onClick={this.handleReset}
-                className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-md transition active:scale-95 cursor-pointer"
+                className="flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-semibold shadow-md transition active:scale-95 cursor-pointer"
+                style={{ background: '#171717', color: '#FFFFFF' }}
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Recover & Try Again</span>
@@ -92,7 +102,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
               <button
                 onClick={this.handleHardReload}
-                className="flex items-center space-x-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium transition active:scale-95 cursor-pointer"
+                className="flex items-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-medium transition active:scale-95 cursor-pointer"
+                style={{ background: '#F0EFEA', color: '#171717', border: '1px solid #C0BCB1' }}
               >
                 <Home className="w-3.5 h-3.5" />
                 <span>Reload Application</span>
@@ -100,7 +111,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
               <button
                 onClick={() => this.setState({ showDetails: !this.state.showDetails })}
-                className="flex items-center space-x-1 px-3 py-2 text-slate-400 hover:text-slate-200 text-xs transition ml-auto cursor-pointer"
+                className="flex items-center space-x-1 px-3 py-2 text-xs transition ml-auto cursor-pointer"
+                style={{ color: '#6B6B6B' }}
               >
                 <Terminal className="w-3.5 h-3.5" />
                 <span>{this.state.showDetails ? 'Hide Stack' : 'Show Stack'}</span>
@@ -109,9 +121,12 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
 
             {this.state.showDetails && (
-              <div className="mt-4 pt-4 border-t border-slate-800">
-                <p className="text-[11px] font-semibold text-slate-400 mb-1.5">Stack Trace:</p>
-                <pre className="max-h-48 overflow-y-auto p-2.5 rounded bg-slate-950 border border-slate-800 text-[10px] text-slate-400 font-mono whitespace-pre-wrap">
+              <div className="mt-4 pt-4" style={{ borderTop: '1px solid #C0BCB1' }}>
+                <p className="text-[11px] font-semibold mb-1.5" style={{ color: '#6B6B6B' }}>Stack Trace:</p>
+                <pre
+                  className="max-h-48 overflow-y-auto p-2.5 rounded text-[10px] font-mono whitespace-pre-wrap"
+                  style={{ background: '#F0EFEA', border: '1px solid #C0BCB1', color: '#3A3A3A' }}
+                >
                   {this.state.error?.stack || 'No stack trace available.'}
                   {this.state.errorInfo?.componentStack}
                 </pre>

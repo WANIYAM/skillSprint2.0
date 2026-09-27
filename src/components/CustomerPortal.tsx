@@ -22,7 +22,39 @@ import {
   ShieldAlert,
   ThumbsUp,
   ExternalLink,
+  TrendingUp,
+  Target,
 } from 'lucide-react';
+
+/** SupportNova palette: paper, stone, red accent, ink */
+const P = {
+  paper: '#F0EFEA',
+  stone: '#C0BCB1',
+  red: '#D21515',
+  redDark: '#A01010',
+  ink: '#171717',
+  inkSoft: '#3A3A3A',
+  muted: '#6B6B6B',
+  white: '#FFFFFF',
+  borderSubtle: '#C0BCB1',
+  borderMedium: '#C0BCB1',
+  textPrimary: '#171717',
+  textSecondary: '#3A3A3A',
+  textMuted: '#6B6B6B',
+  accent: '#D21515',
+  accentLight: 'rgba(210, 21, 21, 0.08)',
+  success: '#171717',
+  successLight: '#3A3A3A',
+  danger: '#D21515',
+  dangerLight: '#D21515',
+  warmGold: '#D21515',
+  accentGold: '#D21515',
+  accentGoldDark: '#A01010',
+  bgCard: '#FFFFFF',
+  bgInput: '#FFFFFF',
+  darkOliveGold: '#3A3A3A',
+  deepMahogany: '#171717',
+};
 
 interface CustomerPortalProps {
   complaints: Complaint[];
@@ -169,7 +201,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
         attachmentName: attachmentName || undefined,
       });
 
-      // Clear form & switch to history
       setTitle('');
       setDescription('');
       setRequestedResolution('');
@@ -212,10 +243,10 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
   const statusSteps = [
     { key: 'New', label: 'Submitted' },
-    { key: 'Analyzed', label: 'AI Analyzed' },
-    { key: 'Assigned', label: 'Assigned' },
-    { key: 'In Progress', label: 'In Progress' },
-    { key: 'Escalated', label: 'Escalated' },
+    { key: 'Analyzed', label: 'Under review' },
+    { key: 'Assigned', label: 'Assigned to support' },
+    { key: 'In Progress', label: 'Being worked on' },
+    { key: 'Escalated', label: 'Needs more help' },
     { key: 'Resolved', label: 'Resolved' },
   ];
 
@@ -227,24 +258,24 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
   const sampleFaqs = [
     {
-      q: 'What is the return window for hardware devices?',
-      a: 'Per Policy POL-RET-01, undamaged hardware devices can be returned within 30 calendar days of delivery for a 100% refund. Beyond 30 days, warranty replacements apply.',
-      tag: 'Hardware & Returns',
+      q: 'How long do I have to return a device?',
+      a: 'You can return an undamaged device within 30 days of delivery for a full refund. After 30 days, warranty replacement may be available.',
+      tag: 'Returns',
     },
     {
-      q: 'How does double billing refund resolution work?',
-      a: 'Per Policy POL-BIL-03, verified duplicate transactions are reversed automatically to the original payment method within 24–48 banking hours without requiring dispute fees.',
-      tag: 'Billing & Payments',
+      q: 'What should I do if I was charged twice?',
+      a: 'Tell us about both charges and include your invoice number. Once we confirm the duplicate charge, we will refund it to your original payment method. This usually takes 1–2 business days.',
+      tag: 'Billing',
     },
     {
-      q: 'What immediate actions are taken for battery swelling?',
-      a: 'Thermal hazard complaints trigger immediate Priority P1 safety escalation with zero-wait emergency packaging replacement dispatched per Policy POL-SAF-02.',
-      tag: 'Safety & Hardware',
+      q: 'What should I do if my device battery is swelling?',
+      a: 'Stop using and charging the device. Move away from it if you notice heat, smoke, or a burning smell, and contact support right away.',
+      tag: 'Device safety',
     },
     {
-      q: 'How do I track my active complaint status?',
-      a: 'Switch to the "My Active Tickets" tab to monitor real-time triage, view policy clauses cited by our engine, and chat directly with assigned support specialists.',
-      tag: 'Support Process',
+      q: 'How can I check my request?',
+      a: 'Open “My Tickets” to see its status, read updates, and message the support team.',
+      tag: 'Your requests',
     },
   ];
 
@@ -255,89 +286,168 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
       f.tag.toLowerCase().includes(faqSearch.toLowerCase())
   );
 
+  const totalTickets = (complaints ?? []).length;
+  const resolvedTickets = (complaints ?? []).filter((complaint) =>
+    complaint.status === 'Resolved' || complaint.status === 'Closed'
+  ).length;
+  const activeTickets = totalTickets - resolvedTickets;
+  const verifiedTickets = (complaints ?? []).filter(
+    (complaint) => complaint.comparisonResult?.verificationStatus === 'Verified'
+  ).length;
+  const averageVerification = totalTickets
+    ? Math.round(
+        (complaints ?? []).reduce(
+          (sum, complaint) => sum + (complaint.comparisonResult?.verificationScore ?? 0),
+          0
+        ) / totalTickets
+      )
+    : 0;
+  const ticketTrend = Array.from({ length: 6 }, (_, index) => {
+    const month = new Date();
+    month.setMonth(month.getMonth() - (5 - index));
+    return {
+      label: month.toLocaleDateString(undefined, { month: 'short' }),
+      count: (complaints ?? []).filter((complaint) => {
+        const submitted = new Date(complaint.submittedAt);
+        return submitted.getMonth() === month.getMonth() && submitted.getFullYear() === month.getFullYear();
+      }).length,
+    };
+  });
+  const maxTrendValue = Math.max(...ticketTrend.map((point) => point.count), 1);
+  const trendPoints = ticketTrend.map((point, index) => {
+    const x = index * 20;
+    const y = 52 - (point.count / maxTrendValue) * 42;
+    return `${x},${y}`;
+  }).join(' ');
+
   return (
-    <div className="space-y-6">
+    <div className="customer-portal role-dashboard space-y-6">
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950/40 border border-slate-700/80 rounded-2xl p-6 relative overflow-hidden shadow-xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center space-x-2 mb-1.5">
-              <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Customer Support Portal
-              </span>
-              <span className="flex items-center text-xs text-emerald-400">
-                <ShieldCheck className="w-3.5 h-3.5 mr-1" />
-                Guaranteed Ground-Truth Resolutions
+      <div className="customer-hero rounded-2xl p-6 md:p-8 relative overflow-hidden">
+        <div className="customer-hero-glow" aria-hidden />
+        <div className="relative z-[1] flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div className="max-w-2xl">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="customer-hero-badge">Customer Support</span>
+              <span className="customer-hero-trust">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Policy-backed answers
               </span>
             </div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">
-              Customer Complaint & Dispute Resolution
+            <h1 className="customer-header-copy text-2xl md:text-[1.75rem] font-bold tracking-tight">
+              How can we help?
             </h1>
-            <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
-              Submit your dispute or issue. SupportNova’s dual-pipeline intelligence ensures rapid triage,
-              accurate policy verification, and zero hallucinated or unsupported promises.
+            <p className="customer-header-copy customer-hero-sub text-sm mt-2 leading-relaxed">
+              Tell us what happened and we’ll help you find a solution. Track updates and message our team from one place.
             </p>
           </div>
 
-          {/* Navigation Pill Tabs */}
-          <div className="flex items-center space-x-1.5 bg-slate-900/90 p-1.5 rounded-xl border border-slate-700/70 overflow-x-auto scrollbar-none">
+          <nav className="customer-tab-nav" aria-label="Support sections">
             <button
+              type="button"
               onClick={() => setActiveTab('submit')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-                activeTab === 'submit'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
+              className={`customer-tab-btn ${activeTab === 'submit' ? 'is-active' : ''}`}
             >
               <FileText className="w-3.5 h-3.5" />
               <span>Submit Ticket</span>
             </button>
 
             <button
+              type="button"
               onClick={() => setActiveTab('history')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-                activeTab === 'history'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
+              className={`customer-tab-btn ${activeTab === 'history' ? 'is-active' : ''}`}
             >
               <span>My Tickets</span>
-              <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-slate-700 text-slate-200 font-bold">
-                {(complaints ?? []).length}
-              </span>
+              <span className="customer-tab-count">{(complaints ?? []).length}</span>
             </button>
 
             <button
+              type="button"
               onClick={() => setActiveTab('faqs')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-                activeTab === 'faqs'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
+              className={`customer-tab-btn ${activeTab === 'faqs' ? 'is-active' : ''}`}
             >
               <HelpCircle className="w-3.5 h-3.5" />
-              <span>Policy FAQs</span>
+              <span>Help & FAQs</span>
             </button>
-          </div>
+          </nav>
         </div>
       </div>
+
+      <section className="customer-analytics" aria-label="Customer support analytics">
+        <div className="customer-kpi-grid">
+          {[
+            { label: 'Total tickets', value: totalTickets, detail: 'All submitted requests', icon: FileText, tone: 'gold' },
+            { label: 'Open requests', value: activeTickets, detail: 'Still being handled', icon: Clock, tone: 'sienna' },
+            { label: 'Resolved requests', value: resolvedTickets, detail: 'Completed requests', icon: CheckCircle2, tone: 'olive' },
+            { label: 'Review score', value: `${averageVerification}%`, detail: `${verifiedTickets} checked requests`, icon: ShieldCheck, tone: 'mahogany' },
+          ].map(({ label, value, detail, icon: Icon, tone }) => (
+            <div className={`customer-kpi customer-kpi-${tone}`} key={label}>
+              <div className="customer-kpi-icon"><Icon className="w-4 h-4" /></div>
+              <div>
+                <p>{label}</p>
+                <strong>{value}</strong>
+                <span>{detail}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="customer-chart-grid">
+          <div className="customer-chart-card">
+            <div className="customer-chart-heading">
+              <div><p>Your requests</p><span>Requests sent in the last six months</span></div>
+              <TrendingUp className="w-4 h-4" />
+            </div>
+            <svg className="customer-line-chart" viewBox="0 0 100 60" role="img" aria-label="Ticket activity trend">
+              <line x1="0" y1="52" x2="100" y2="52" />
+              <line x1="0" y1="31" x2="100" y2="31" />
+              <line x1="0" y1="10" x2="100" y2="10" />
+              <polyline points={trendPoints} />
+              {ticketTrend.map((point, index) => (
+                <circle key={point.label} cx={index * 20} cy={52 - (point.count / maxTrendValue) * 42} r="1.7" />
+              ))}
+            </svg>
+            <div className="customer-chart-labels">{ticketTrend.map((point) => <span key={point.label}>{point.label}</span>)}</div>
+          </div>
+
+          <div className="customer-chart-card customer-status-chart">
+            <div className="customer-chart-heading">
+              <div><p>Request progress</p><span>Where your requests stand</span></div>
+              <Target className="w-4 h-4" />
+            </div>
+            <div className="customer-status-bars">
+              {[
+                { label: 'Resolved', count: resolvedTickets, color: 'resolved' },
+                { label: 'Active', count: activeTickets, color: 'active' },
+                { label: 'Verified', count: verifiedTickets, color: 'verified' },
+              ].map((item) => (
+                <div className="customer-status-row" key={item.label}>
+                  <span>{item.label}</span>
+                  <div><i className={`customer-bar-${item.color}`} style={{ width: `${totalTickets ? Math.max((item.count / totalTickets) * 100, item.count ? 8 : 0) : 0}%` }} /></div>
+                  <strong>{item.count}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* TAB 1: SUBMIT COMPLAINT */}
       {activeTab === 'submit' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Form */}
-          <div className="lg:col-span-2 bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 shadow-xl">
-            <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-700/60">
-              <h2 className="text-base font-semibold text-white flex items-center space-x-2">
-                <FileText className="w-5 h-5 text-blue-400" />
-                <span>Submit New Complaint</span>
+          <div className="customer-issue-form-card lg:col-span-2 rounded-2xl p-6 md:p-7">
+            <div className="flex items-center justify-between pb-4 mb-4" style={{ borderBottom: `1px solid ${P.borderSubtle}` }}>
+              <h2 className="text-base font-semibold flex items-center space-x-2" style={{ color: P.textPrimary }}>
+                <FileText className="w-5 h-5" style={{ color: P.accentGold }} />
+                <span>Tell us about your issue</span>
               </h2>
-              <span className="text-xs text-slate-400">All fields validated in real-time</span>
+              <span className="text-xs" style={{ color: P.textMuted }}>Fields marked as required must be filled in</span>
             </div>
 
             {submitError && (
-              <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center space-x-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+              <div className="customer-alert mb-4 p-3 rounded-xl text-xs flex items-center space-x-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
                 <span>{submitError}</span>
               </div>
             )}
@@ -345,7 +455,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                  <label className="block text-xs font-medium mb-1" style={{ color: P.textSecondary }}>
                     Your Full Name
                   </label>
                   <input
@@ -353,32 +463,47 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
                     required
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                    className="w-full rounded-lg px-3 py-2 text-xs focus:outline-none"
+                    style={{
+                      background: P.bgInput,
+                      border: `1px solid ${P.borderMedium}`,
+                      color: P.textPrimary,
+                    }}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Registered Email
+                  <label className="block text-xs font-medium mb-1" style={{ color: P.textSecondary }}>
+                    Email address
                   </label>
                   <input
                     type="email"
                     value={customerEmail}
                     onChange={(e) => setCustomerEmail(e.target.value)}
                     required
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                    className="w-full rounded-lg px-3 py-2 text-xs focus:outline-none"
+                    style={{
+                      background: P.bgInput,
+                      border: `1px solid ${P.borderMedium}`,
+                      color: P.textPrimary,
+                    }}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Account Tier
+                  <label className="block text-xs font-medium mb-1" style={{ color: P.textSecondary }}>
+                    Account type
                   </label>
                   <select
                     value={customerType}
                     onChange={(e) => setCustomerType(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                    className="w-full rounded-lg px-3 py-2 text-xs focus:outline-none"
+                    style={{
+                      background: P.bgInput,
+                      border: `1px solid ${P.borderMedium}`,
+                      color: P.textPrimary,
+                    }}
                   >
                     <option value="Standard">Standard Consumer</option>
                     <option value="Premium VIP">Premium VIP</option>
@@ -387,7 +512,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                  <label className="block text-xs font-medium mb-1" style={{ color: P.textSecondary }}>
                     Product or Service
                   </label>
                   <input
@@ -395,27 +520,37 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                     value={productService}
                     onChange={(e) => setProductService(e.target.value)}
                     required
-                    placeholder="e.g. NovaTab Ultra 13"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                    placeholder='e.g. NovaTab Ultra 13"'
+                    className="w-full rounded-lg px-3 py-2 text-xs focus:outline-none"
+                    style={{
+                      background: P.bgInput,
+                      border: `1px solid ${P.borderMedium}`,
+                      color: P.textPrimary,
+                    }}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Order / Invoice Reference
+                  <label className="block text-xs font-medium mb-1" style={{ color: P.textSecondary }}>
+                    Order or invoice number
                   </label>
                   <input
                     type="text"
                     value={orderReference}
                     onChange={(e) => setOrderReference(e.target.value)}
                     placeholder="e.g. ORD-2026-8812"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                    className="w-full rounded-lg px-3 py-2 text-xs focus:outline-none"
+                    style={{
+                      background: P.bgInput,
+                      border: `1px solid ${P.borderMedium}`,
+                      color: P.textPrimary,
+                    }}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Complaint Subject
+                <label className="block text-xs font-medium mb-1" style={{ color: P.textSecondary }}>
+                  What is the issue?
                 </label>
                 <input
                   type="text"
@@ -423,46 +558,66 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   onChange={(e) => setTitle(e.target.value)}
                   required
                   placeholder="Summary of the issue..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                  className="w-full rounded-lg px-3 py-2 text-xs focus:outline-none"
+                  style={{
+                    background: P.bgInput,
+                    border: `1px solid ${P.borderMedium}`,
+                    color: P.textPrimary,
+                  }}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Detailed Complaint Description
+                <label className="block text-xs font-medium mb-1" style={{ color: P.textSecondary }}>
+                  Tell us what happened
                 </label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   required
                   rows={5}
-                  placeholder="Explain what happened in detail, including dates, serial numbers, errors, or safety hazards..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                  placeholder="Include any helpful details, such as dates, order numbers, or error messages."
+                  className="w-full rounded-lg p-3 text-xs focus:outline-none"
+                  style={{
+                    background: P.bgInput,
+                    border: `1px solid ${P.borderMedium}`,
+                    color: P.textPrimary,
+                  }}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Your Requested Resolution (Optional)
+                <label className="block text-xs font-medium mb-1" style={{ color: P.textSecondary }}>
+                  How would you like us to help? (Optional)
                 </label>
                 <input
                   type="text"
                   value={requestedResolution}
                   onChange={(e) => setRequestedResolution(e.target.value)}
-                  placeholder="e.g. Full refund to card, replacement hardware, or credit"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                  placeholder="For example: a refund, a replacement, or help fixing the issue"
+                  className="w-full rounded-lg px-3 py-2 text-xs focus:outline-none"
+                  style={{
+                    background: P.bgInput,
+                    border: `1px solid ${P.borderMedium}`,
+                    color: P.textPrimary,
+                  }}
                 />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Submission Channel
+                  <label className="block text-xs font-medium mb-1" style={{ color: P.textSecondary }}>
+                    How are you contacting us?
                   </label>
                   <select
                     value={channel}
                     onChange={(e: any) => setChannel(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                    className="w-full rounded-lg px-3 py-2 text-xs focus:outline-none"
+                    style={{
+                      background: P.bgInput,
+                      border: `1px solid ${P.borderMedium}`,
+                      color: P.textPrimary,
+                    }}
                   >
                     <option value="Web Portal">Web Portal</option>
                     <option value="Email">Email Intake</option>
@@ -471,8 +626,8 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Supporting File Attachment
+                  <label className="block text-xs font-medium mb-1" style={{ color: P.textSecondary }}>
+                    Attachment name (Optional)
                   </label>
                   <div className="relative">
                     <input
@@ -480,29 +635,34 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       value={attachmentName}
                       onChange={(e) => setAttachmentName(e.target.value)}
                       placeholder="e.g. invoice_photo.jpg or receipt.pdf"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                      className="w-full rounded-lg pl-8 pr-3 py-2 text-xs focus:outline-none"
+                      style={{
+                        background: P.bgInput,
+                        border: `1px solid ${P.borderMedium}`,
+                        color: P.textPrimary,
+                      }}
                     />
-                    <Paperclip className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                    <Paperclip className="w-3.5 h-3.5 absolute left-2.5 top-2.5" style={{ color: P.textMuted }} />
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-700/60 flex items-center justify-between">
-                <span className="text-[11px] text-slate-400 flex items-center">
-                  <Info className="w-3.5 h-3.5 mr-1 text-blue-400" />
-                  Processed by Pipeline 1 (GenAI) & Pipeline 2 (Rule Matrix)
+              <div className="pt-4 flex items-center justify-between" style={{ borderTop: `1px solid ${P.borderSubtle}` }}>
+                <span className="text-[11px] flex items-center" style={{ color: P.textMuted }}>
+                  <Info className="w-3.5 h-3.5 mr-1" style={{ color: P.accentGold }} />
+                  We’ll review your request and send you an update.
                 </span>
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-blue-600/30 flex items-center space-x-2 transition disabled:opacity-50 cursor-pointer"
+                  className="customer-primary-btn px-5 py-2.5 rounded-xl text-xs font-semibold flex items-center space-x-2 transition disabled:opacity-50 cursor-pointer"
                 >
                   {isLoading ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : (
                     <Send className="w-4 h-4" />
                   )}
-                  <span>{isLoading ? 'Running Dual Pipeline...' : 'Submit & Analyze'}</span>
+                  <span>{isLoading ? 'Sending your request...' : 'Send request'}</span>
                 </button>
               </div>
             </form>
@@ -510,93 +670,96 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
           {/* Quick-Fill Scenarios Sidebar */}
           <div className="space-y-4">
-            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5">
-              <h3 className="text-xs font-semibold text-slate-200 uppercase tracking-wider mb-3 flex items-center space-x-1.5">
-                <Sparkles className="w-4 h-4 text-blue-400" />
-                <span>Test Scenario Presets</span>
+            <div className="customer-example-panel rounded-2xl p-5 md:p-6">
+              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3 flex items-center space-x-1.5" style={{ color: P.textPrimary }}>
+                <Sparkles className="w-4 h-4" style={{ color: P.accentGold }} />
+                <span>Example issues</span>
               </h3>
-              <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-                Load predefined edge-case complaints to observe how SupportNova’s Dual Pipeline handles
-                critical safety threats, billing disputes, late returns, and adversarial attacks.
+              <p className="text-xs mb-4 leading-relaxed" style={{ color: P.textMuted }}>
+                Choose an example to fill in the form. You can edit it before sending.
               </p>
 
               <div className="space-y-2.5">
                 <button
+                  type="button"
                   onClick={() => handleFillTemplate('battery')}
-                  className="w-full text-left p-3 rounded-xl bg-slate-900/80 hover:bg-slate-900 border border-red-500/30 hover:border-red-500/60 transition group cursor-pointer"
+                  className="customer-light-card customer-example-issue customer-example-issue--urgent w-full text-left p-3.5 rounded-xl transition group cursor-pointer"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-red-300">
-                      Thermal Safety Hazard
+                    <span className="text-xs font-semibold" style={{ color: '#D21515' }}>
+                      Battery safety issue
                     </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-mono">
-                      Critical P1
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded font-mono"
+                      style={{
+                        background: 'rgba(210, 21, 21, 0.1)',
+                        color: '#D21515',
+                      }}
+                    >
+                      Urgent
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">
-                    Swollen battery, burning odor, and smoke. Tests mandatory safety escalation.
+                  <p className="text-[11px] mt-1 line-clamp-2" style={{ color: P.textMuted }}>
+                    The device battery is swollen and there is smoke or a burning smell.
                   </p>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => handleFillTemplate('billing')}
-                  className="w-full text-left p-3 rounded-xl bg-slate-900/80 hover:bg-slate-900 border border-blue-500/30 hover:border-blue-500/60 transition group cursor-pointer"
+                  className="customer-light-card customer-example-issue w-full text-left p-3.5 rounded-xl transition group cursor-pointer"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-blue-300">
-                      Double Subscription Charge
+                    <span className="text-xs font-semibold" style={{ color: P.textPrimary }}>
+                      Charged twice
                     </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono">
-                      Billing P2
-                    </span>
+                    <span className="customer-tag customer-tag--billing">Billing</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">
-                    Duplicate $149 transaction capture. Tests POL-BIL-03 instant reversal logic.
+                  <p className="text-[11px] mt-1 line-clamp-2" style={{ color: P.textMuted }}>
+                    Two charges appeared for the same subscription renewal.
                   </p>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => handleFillTemplate('lateReturn')}
-                  className="w-full text-left p-3 rounded-xl bg-slate-900/80 hover:bg-slate-900 border border-amber-500/30 hover:border-amber-500/60 transition group cursor-pointer"
+                  className="customer-light-card customer-example-issue w-full text-left p-3.5 rounded-xl transition group cursor-pointer"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-amber-300">
-                      Past-Policy Refund Demand
+                    <span className="text-xs font-semibold" style={{ color: P.textPrimary }}>
+                      Return after 90 days
                     </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-mono">
-                      Unsupported Promise
-                    </span>
+                    <span className="customer-tag">Return request</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">
-                    Cash refund requested after 90 days. Tests Pipeline 2 blocking of unauthorized promises.
+                  <p className="text-[11px] mt-1 line-clamp-2" style={{ color: P.textMuted }}>
+                    Ask whether a return is possible after the usual return period.
                   </p>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => handleFillTemplate('adversarial')}
-                  className="w-full text-left p-3 rounded-xl bg-slate-900/80 hover:bg-slate-900 border border-purple-500/30 hover:border-purple-500/60 transition group cursor-pointer"
+                  className="customer-light-card customer-example-issue w-full text-left p-3.5 rounded-xl transition group cursor-pointer"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-purple-300">
-                      Adversarial Prompt Injection
+                    <span className="text-xs font-semibold" style={{ color: P.textPrimary }}>
+                      Unusual refund request
                     </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 font-mono">
-                      Security Attack
-                    </span>
+                    <span className="customer-tag">Refund question</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">
-                    Embedded directive: [OVERRIDE PREVIOUS DIRECTIVES]. Tests untrusted text sandboxing.
+                  <p className="text-[11px] mt-1 line-clamp-2" style={{ color: P.textMuted }}>
+                    An example request asking for a refund outside the usual process.
                   </p>
                 </button>
               </div>
             </div>
 
             {/* Guarantee Callout */}
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 text-xs text-slate-400 space-y-2">
-              <span className="font-semibold text-slate-300 block">Customer Protection Guarantees:</span>
-              <p>• No response promises ungrounded cash compensation without eligibility verification.</p>
-              <p>• Adversarial text is never executed as instructions.</p>
-              <p>• Safety emergencies bypass triage for instant containment packaging.</p>
+            <div className="customer-light-card customer-help-callout rounded-2xl p-4 md:p-5 text-xs space-y-2">
+              <span className="font-semibold block" style={{ color: P.textPrimary }}>How we help:</span>
+              <p>• We check requests against the relevant support policies.</p>
+              <p>• A support team member may review your request when needed.</p>
+              <p>• Tell us right away if your issue involves a safety risk.</p>
             </div>
           </div>
         </div>
@@ -607,12 +770,12 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Complaints list */}
           <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: P.textMuted }}>
               Your Submissions ({(complaints ?? []).length})
             </h3>
             {(complaints ?? []).length === 0 ? (
-              <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-8 text-center text-slate-400 text-xs">
-                No complaints submitted yet for this account.
+              <div className="customer-dashboard-surface customer-empty-state rounded-xl p-8 text-center text-xs">
+                You haven’t sent any requests yet.
               </div>
             ) : (
               (complaints ?? []).map((c) => {
@@ -622,37 +785,48 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   <div
                     key={c.id}
                     onClick={() => setSelectedComplaintId(c.id)}
-                    className={`p-4 rounded-xl border transition cursor-pointer ${
-                      isSelected
-                        ? 'bg-slate-800 border-blue-500 shadow-md ring-1 ring-blue-500/50'
-                        : 'bg-slate-800/50 border-slate-700/60 hover:bg-slate-800/80'
-                    }`}
+                    className={`customer-dashboard-surface dashboard-request-card p-4 rounded-xl border transition cursor-pointer${isSelected ? ' customer-request-selected' : ''}`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="font-mono text-[11px] text-blue-400 font-semibold">
+                      <span className="font-mono text-[11px] font-semibold" style={{ color: P.accentGold }}>
                         {c.id}
                       </span>
                       <span
-                        className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${
-                          c.status === 'Resolved' || c.status === 'Closed'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : c.status === 'Escalated'
-                            ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                            : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                        }`}
+                        className="px-2 py-0.5 text-[10px] font-semibold rounded-full"
+                        style={{
+                          background:
+                            c.status === 'Resolved' || c.status === 'Closed'
+                              ? 'rgba(90, 122, 58, 0.2)'
+                              : c.status === 'Escalated'
+                              ? 'rgba(154, 44, 44, 0.2)'
+                              : 'rgba(215, 190, 130, 0.15)',
+                          color:
+                            c.status === 'Resolved' || c.status === 'Closed'
+                              ? P.successLight
+                              : c.status === 'Escalated'
+                              ? '#e8a0a0'
+                              : P.warmGold,
+                          border: `1px solid ${
+                            c.status === 'Resolved' || c.status === 'Closed'
+                              ? 'rgba(90, 122, 58, 0.3)'
+                              : c.status === 'Escalated'
+                              ? 'rgba(154, 44, 44, 0.3)'
+                              : 'rgba(215, 190, 130, 0.3)'
+                          }`,
+                        }}
                       >
                         {c.status}
                       </span>
                     </div>
 
-                    <h4 className="text-xs font-medium text-slate-200 line-clamp-1 mb-1">
+                    <h4 className="text-xs font-medium line-clamp-1 mb-1" style={{ color: P.textPrimary }}>
                       {c.title}
                     </h4>
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2">
+                    <div className="flex items-center justify-between text-[11px] mt-2" style={{ color: P.textMuted }}>
                       <span>{c.productService}</span>
                       <span className="flex items-center space-x-1">
-                        <Clock className="w-3 h-3 text-slate-500" />
+                        <Clock className="w-3 h-3" style={{ color: P.textMuted }} />
                         <span>{new Date(c.submittedAt).toLocaleDateString()}</span>
                       </span>
                     </div>
@@ -665,25 +839,31 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
           {/* Active Detail & Tracker */}
           <div className="lg:col-span-2">
             {selectedComplaint ? (
-              <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 space-y-6">
+              <div className="customer-dashboard-surface customer-ticket-detail rounded-2xl p-6 md:p-7 space-y-6">
                 {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-slate-700/60">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4" style={{ borderBottom: `1px solid ${P.borderSubtle}` }}>
                   <div>
                     <div className="flex items-center space-x-2">
-                      <span className="font-mono text-xs font-bold text-blue-400">
+                      <span className="font-mono text-xs font-bold" style={{ color: P.accentGold }}>
                         {selectedComplaint.id}
                       </span>
-                      <span className="text-slate-500">•</span>
-                      <span className="text-xs text-slate-400">
+                      <span style={{ color: P.textMuted }}>•</span>
+                      <span className="text-xs" style={{ color: P.textMuted }}>
                         Order Ref: {selectedComplaint.orderReference}
                       </span>
                       {selectedComplaint.isRepeat && (
-                        <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-amber-500/20 text-amber-300">
-                          Repeat Issue ({selectedComplaint.repeatCount}x)
+                        <span
+                          className="px-2 py-0.5 text-[10px] font-semibold rounded"
+                          style={{
+                            background: 'rgba(117, 92, 27, 0.2)',
+                            color: P.darkOliveGold,
+                          }}
+                        >
+                          Reported before ({selectedComplaint.repeatCount} times)
                         </span>
                       )}
                     </div>
-                    <h2 className="text-lg font-bold text-white mt-1">
+                    <h2 className="text-lg font-bold mt-1" style={{ color: P.textPrimary }}>
                       {selectedComplaint.title}
                     </h2>
                   </div>
@@ -691,27 +871,29 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   <div className="flex items-center space-x-2">
                     {selectedComplaint.status !== 'Resolved' && selectedComplaint.status !== 'Closed' && selectedComplaint.status !== 'Escalated' && (
                       <button
+                        type="button"
                         onClick={() => setEscalateModalOpen(true)}
-                        className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-medium transition cursor-pointer flex items-center space-x-1"
+                        className="customer-outline-danger px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer flex items-center space-x-1"
                       >
-                        <Flame className="w-3.5 h-3.5 text-rose-400" />
+                        <Flame className="w-3.5 h-3.5" />
                         <span>Escalate</span>
                       </button>
                     )}
 
                     <button
+                      type="button"
                       onClick={() => onSelectComplaint(selectedComplaint)}
-                      className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs font-medium text-slate-200 transition cursor-pointer"
+                      className="customer-secondary-btn px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer"
                     >
-                      View Dossier
+                      View details
                     </button>
                   </div>
                 </div>
 
                 {/* Status Progress Track */}
-                <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
-                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-3">
-                    Resolution Lifecycle
+                <div className="customer-progress-panel rounded-xl p-4 md:p-5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider block mb-3" style={{ color: P.textMuted }}>
+                    Request progress
                   </span>
                   <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
                     {statusSteps.map((step, idx) => {
@@ -722,12 +904,8 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       return (
                         <div
                           key={step.key}
-                          className={`p-2.5 rounded-lg border text-center transition ${
-                            isCurrent
-                              ? 'bg-blue-600/20 border-blue-500 text-blue-300'
-                              : isCompleted
-                              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                              : 'bg-slate-800/40 border-slate-800 text-slate-500'
+                          className={`customer-progress-step p-2.5 rounded-lg border text-center transition ${
+                            isCurrent ? 'is-current' : isCompleted ? 'is-completed' : 'is-pending'
                           }`}
                         >
                           <div className="text-[10px] font-bold">Step {idx + 1}</div>
@@ -740,17 +918,17 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
                 {/* Verified AI Response */}
                 {selectedComplaint.pipeline1Output?.draftedResponse && (
-                  <div className="bg-blue-950/30 border border-blue-500/30 rounded-xl p-4">
+                  <div className="customer-response-card rounded-xl p-4 md:p-5">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-blue-300 flex items-center space-x-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        <span>Policy-Verified Support Response</span>
+                      <span className="text-xs font-semibold flex items-center space-x-1.5" style={{ color: P.warmGold }}>
+                        <CheckCircle2 className="w-4 h-4" style={{ color: P.successLight }} />
+                        <span>Support team response</span>
                       </span>
-                      <span className="text-[10px] font-mono text-slate-400">
-                        Assigned Dept: {selectedComplaint.assignedDepartment}
+                      <span className="text-[10px] font-mono" style={{ color: P.textMuted }}>
+                        Support team: {selectedComplaint.assignedDepartment}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line bg-slate-900/50 p-3 rounded-lg border border-slate-800">
+                    <p className="customer-response-copy text-xs leading-relaxed whitespace-pre-line p-3 rounded-lg">
                       {selectedComplaint.pipeline1Output.draftedResponse}
                     </p>
                   </div>
@@ -758,25 +936,39 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
                 {/* CSAT Rating Widget for Resolved Tickets */}
                 {(selectedComplaint.status === 'Resolved' || selectedComplaint.status === 'Closed') && (
-                  <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-xl p-4 space-y-3">
+                  <div className="customer-csat-panel rounded-xl p-4 md:p-5 space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <ThumbsUp className="w-4 h-4 text-emerald-400" />
-                        <h4 className="text-xs font-bold text-emerald-300">
-                          Rate Your Resolution Experience (CSAT)
+                        <ThumbsUp className="w-4 h-4" style={{ color: P.successLight }} />
+                        <h4 className="text-xs font-bold" style={{ color: P.successLight }}>
+                          How was your support experience?
                         </h4>
                       </div>
                       {selectedComplaint.csatRating && (
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold">
-                          Rated: {selectedComplaint.csatRating} / 5 Stars
+                        <span
+                          className="text-[10px] px-2 py-0.5 rounded font-semibold"
+                          style={{
+                            background: 'rgba(90, 122, 58, 0.2)',
+                            color: P.successLight,
+                            border: `1px solid rgba(90, 122, 58, 0.3)`,
+                          }}
+                        >
+                          Your rating: {selectedComplaint.csatRating} / 5
                         </span>
                       )}
                     </div>
 
                     {csatSuccess && (
-                      <div className="p-2.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs flex items-center space-x-1.5">
+                      <div
+                        className="p-2.5 rounded text-xs flex items-center space-x-1.5"
+                        style={{
+                          background: 'rgba(90, 122, 58, 0.2)',
+                          border: `1px solid rgba(90, 122, 58, 0.4)`,
+                          color: P.successLight,
+                        }}
+                      >
                         <CheckCircle2 className="w-4 h-4" />
-                        <span>Thank you! Your feedback has been recorded for quality assurance.</span>
+                        <span>Thank you for your feedback!</span>
                       </div>
                     )}
 
@@ -795,22 +987,28 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                               <Star
                                 className={`w-6 h-6 ${
                                   (ratingHover !== null ? star <= ratingHover : star <= ratingValue)
-                                    ? 'text-amber-400 fill-amber-400'
-                                    : 'text-slate-600'
+                                    ? 'fill-current'
+                                    : ''
                                 }`}
+                                style={{
+                                  color:
+                                    (ratingHover !== null ? star <= ratingHover : star <= ratingValue)
+                                      ? P.warmGold
+                                      : P.textMuted,
+                                }}
                               />
                             </button>
                           ))}
-                          <span className="text-xs font-semibold text-slate-300 ml-2">
+                          <span className="text-xs font-semibold ml-2" style={{ color: P.textSecondary }}>
                             {ratingValue === 5
-                              ? 'Exceptional (5/5)'
+                              ? 'Great (5/5)'
                               : ratingValue === 4
-                              ? 'Very Satisfied (4/5)'
+                              ? 'Good (4/5)'
                               : ratingValue === 3
-                              ? 'Acceptable (3/5)'
+                              ? 'Okay (3/5)'
                               : ratingValue === 2
-                              ? 'Disappointed (2/5)'
-                              : 'Unsatisfactory (1/5)'}
+                              ? 'Not good (2/5)'
+                              : 'Poor (1/5)'}
                           </span>
                         </div>
 
@@ -818,16 +1016,22 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                           rows={2}
                           value={csatFeedbackText}
                           onChange={(e) => setCsatFeedbackText(e.target.value)}
-                          placeholder="Optional: How can we improve our support experience?"
-                          className="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
+                          placeholder="What could we do better? (Optional)"
+                          className="w-full rounded-lg p-2.5 text-xs focus:outline-none"
+                          style={{
+                            background: 'rgba(22, 24, 15, 0.8)',
+                            border: `1px solid ${P.borderMedium}`,
+                            color: P.textPrimary,
+                          }}
                         />
 
                         <button
+                          type="button"
                           onClick={handleRatingSubmit}
                           disabled={isSubmittingRating}
-                          className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow transition cursor-pointer disabled:opacity-50"
+                          className="customer-primary-btn px-4 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer disabled:opacity-50"
                         >
-                          {isSubmittingRating ? 'Submitting...' : 'Submit CSAT Review'}
+                          {isSubmittingRating ? 'Sending...' : 'Send rating'}
                         </button>
                       </div>
                     )}
@@ -836,9 +1040,9 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
                 {/* Conversation Thread */}
                 <div>
-                  <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-3 flex items-center space-x-2">
-                    <MessageSquare className="w-4 h-4 text-blue-400" />
-                    <span>Communication & Updates</span>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider mb-3 flex items-center space-x-2" style={{ color: P.textSecondary }}>
+                    <MessageSquare className="w-4 h-4" style={{ color: P.accentGold }} />
+                    <span>Messages and updates</span>
                   </h3>
 
                   <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
@@ -847,13 +1051,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       return (
                         <div
                           key={msg.id}
-                          className={`p-3 rounded-xl border text-xs ${
-                            isCustomer
-                              ? 'bg-slate-900/90 border-slate-700/80 ml-6 text-slate-200'
-                              : 'bg-blue-900/20 border-blue-500/30 mr-6 text-blue-100'
+                          className={`customer-conversation-message p-3 rounded-xl border text-xs ${
+                            isCustomer ? 'customer-message-own ml-6' : 'customer-message-support mr-6'
                           }`}
                         >
-                          <div className="flex items-center justify-between mb-1 text-[11px] text-slate-400">
+                          <div className="flex items-center justify-between mb-1 text-[11px]" style={{ color: P.textMuted }}>
                             <span className="font-semibold">{msg.senderName} ({msg.sender})</span>
                             <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
@@ -869,12 +1071,18 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       type="text"
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
-                      placeholder="Add follow-up details or ask a question..."
-                      className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500"
+                      placeholder="Write a message or ask a question..."
+                      className="flex-1 rounded-lg px-3 py-2 text-xs focus:outline-none"
+                      style={{
+                        background: P.bgInput,
+                        border: `1px solid ${P.borderMedium}`,
+                        color: P.textPrimary,
+                      }}
                     />
                     <button
+                      type="button"
                       onClick={handleSendReply}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium transition cursor-pointer"
+                      className="customer-send-reply customer-primary-btn px-4 py-2 rounded-lg text-xs font-medium transition cursor-pointer"
                     >
                       Send
                     </button>
@@ -882,8 +1090,8 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="bg-slate-800/40 border border-slate-700/50 rounded-2xl p-12 text-center text-slate-400 text-xs">
-                Select a complaint from the left to view details and resolution track.
+              <div className="customer-dashboard-surface customer-empty-state rounded-2xl p-12 text-center text-xs">
+                Choose a request to see its details and updates.
               </div>
             )}
           </div>
@@ -893,37 +1101,37 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
       {/* TAB 3: POLICY FAQS & SELF SERVICE */}
       {activeTab === 'faqs' && (
         <div className="space-y-4">
-          <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6">
+          <div className="customer-dashboard-surface customer-faq-shell rounded-2xl p-6 md:p-8">
             <div className="max-w-xl mx-auto text-center space-y-2 mb-6">
-              <h2 className="text-lg font-bold text-white">Self-Service Policy & Resolution Guide</h2>
-              <p className="text-xs text-slate-400">
-                Search verified policies and knowledge base clauses for instant clarity before filing a ticket.
+              <h2 className="text-lg font-bold" style={{ color: P.textPrimary }}>Help and common questions</h2>
+              <p className="text-xs" style={{ color: P.textMuted }}>
+                Find answers about returns, billing, device safety, and support requests.
               </p>
               <div className="relative mt-3">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <Search className="w-4 h-4 absolute left-3 top-3" style={{ color: P.textMuted }} />
                 <input
                   type="text"
                   value={faqSearch}
                   onChange={(e) => setFaqSearch(e.target.value)}
-                  placeholder="Search returns, battery safety, billing reversals..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="Search for returns, billing, or device safety..."
+                  className="w-full rounded-xl pl-9 pr-4 py-2.5 text-xs focus:outline-none"
+                  style={{
+                    background: P.bgInput,
+                    border: `1px solid ${P.borderMedium}`,
+                    color: P.textPrimary,
+                  }}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredFaqs.map((faq, idx) => (
-                <div
-                  key={idx}
-                  className="p-4 rounded-xl bg-slate-900/70 border border-slate-700/70 space-y-2"
-                >
+                <div key={idx} className="customer-faq-card p-4 md:p-5 rounded-xl space-y-2">
                   <div className="flex items-start justify-between">
-                    <h3 className="text-xs font-bold text-slate-100">{faq.q}</h3>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0 font-medium">
-                      {faq.tag}
-                    </span>
+                    <h3 className="text-xs font-bold" style={{ color: P.textPrimary }}>{faq.q}</h3>
+                    <span className="customer-tag shrink-0">{faq.tag}</span>
                   </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">{faq.a}</p>
+                  <p className="text-xs leading-relaxed" style={{ color: P.textSecondary }}>{faq.a}</p>
                 </div>
               ))}
             </div>
@@ -933,27 +1141,27 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
       {/* Escalation Request Modal */}
       {escalateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
-            <div className="flex items-center space-x-2 text-rose-400">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 customer-modal-backdrop">
+          <div className="customer-modal-panel rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 customer-modal-title-icon">
               <ShieldAlert className="w-5 h-5" />
-              <h3 className="text-sm font-bold text-slate-100">Request Supervisor Escalation</h3>
+              <h3 className="text-sm font-bold" style={{ color: P.textPrimary }}>Ask for more help</h3>
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              If your issue requires urgent intervention or you are dissatisfied with standard resolution timelines, specify the reason below.
+            <p className="text-xs leading-relaxed" style={{ color: P.textSecondary }}>
+              Tell us why you need more help. For example, your issue is urgent or has taken too long to resolve.
             </p>
             <textarea
               rows={3}
               value={escalateReason}
               onChange={(e) => setEscalateReason(e.target.value)}
-              placeholder="e.g. Unresolved for 48 hours / Safety hazard / Critical business impact..."
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              placeholder="For example: It has been 48 hours, or this is a safety issue."
+              className="w-full rounded-xl p-3 text-xs focus:outline-none"
             />
             <div className="flex items-center space-x-2 pt-2">
               <button
                 type="button"
                 onClick={() => setEscalateModalOpen(false)}
-                className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
+                className="customer-secondary-btn flex-1 py-2 rounded-xl text-xs font-semibold transition cursor-pointer"
               >
                 Cancel
               </button>
@@ -961,9 +1169,9 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                 type="button"
                 disabled={isEscalating || !escalateReason.trim()}
                 onClick={handleEscalate}
-                className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+                className="customer-primary-btn flex-1 py-2 rounded-xl text-xs font-semibold transition cursor-pointer disabled:opacity-50"
               >
-                {isEscalating ? 'Escalating...' : 'Submit Escalation'}
+                {isEscalating ? 'Sending...' : 'Send request'}
               </button>
             </div>
           </div>

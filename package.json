@@ -6,14 +6,11 @@
   "scripts": {
     "dev": "python -m uvicorn main:app --reload --host 0.0.0.0 --port 3000",
     "dev:frontend": "vite",
-    "dev:legacy": "tsx server.ts",
     "build": "vite build",
     "lint": "tsc --noEmit",
-    "start": "python -m uvicorn main:app --host 0.0.0.0 --port 3000",
-    "start:legacy": "node server.ts"
+    "start": "python -m uvicorn main:app --host 0.0.0.0 --port 3000"
   },
   "dependencies": {
-    "@google/genai": "^0.2.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "lucide-react": "^1.16.0",

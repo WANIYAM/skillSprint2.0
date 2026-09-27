@@ -6,6 +6,37 @@ from fastapi.testclient import TestClient
 from database import SessionLocal
 from main import app, load_seed
 from models import Policy
+from rule_engine import compare_outputs, run_rule_validation
+from validator import crosscheck_complaint_and_ai
+
+
+PIPELINE1_SUCCESS = {
+    "pipelineStatus": "COMPLETED",
+    "primaryIssue": "Safety hazard report",
+    "secondaryIssues": [],
+    "category": "Hardware & Devices",
+    "subcategory": "Battery safety",
+    "sentiment": "Neutral",
+    "urgency": "Critical",
+    "priority": "P1",
+    "entities": {},
+    "summary": "Customer reports a potential battery hazard.",
+    "recommendedDepartment": "Trust & Safety",
+    "secondaryDepartments": [],
+    "citedPolicies": [],
+    "resolutionSteps": ["Review the reported hazard"],
+    "escalationRequired": True,
+    "escalationTier": "Critical Management Escalation",
+    "escalationReason": "Safety review required",
+    "draftedResponse": "We have received your safety report for review.",
+    "responseTone": "Empathetic",
+    "followUpRequired": True,
+    "followUpReason": "Safety review",
+    "followUpCommunication": "A reviewer will follow up.",
+    "internalAgentGuidance": "Route to a safety reviewer.",
+    "clarificationQuestions": [],
+    "adversarialAnalysis": {"isAdversarial": False, "threatType": "None", "threatDetails": "", "recommendedAction": "Review"},
+}
 
 
 class TestScenarioExecution(unittest.TestCase):
@@ -14,10 +45,11 @@ class TestScenarioExecution(unittest.TestCase):
         cls.client = TestClient(app)
 
     def test_valid_scenario_executes_assertions(self):
-        response = self.client.post(
-            "/api/test-scenarios/run",
-            json={"id": "TEST-TRAP-02"},
-        )
+        with patch("main.run_ai_pipeline", return_value=PIPELINE1_SUCCESS):
+            response = self.client.post(
+                "/api/test-scenarios/run",
+                json={"id": "TEST-TRAP-02"},
+            )
 
         self.assertEqual(response.status_code, 200)
         result = response.json()["result"]
@@ -54,7 +86,7 @@ class TestScenarioExecution(unittest.TestCase):
             "hallucinationFlags": [],
             "mandatoryActionMissingFlags": [],
         }
-        with patch("main.run_rule_validation", return_value=invalid_rule_output):
+        with patch("main.run_ai_pipeline", return_value=PIPELINE1_SUCCESS), patch("main.run_rule_validation", return_value=invalid_rule_output):
             response = self.client.post(
                 "/api/test-scenarios/run",
                 json={"id": "TEST-TRAP-02"},
@@ -75,8 +107,8 @@ class TestScenarioExecution(unittest.TestCase):
         complaints = seed["complaints"]
         tags = [tag for complaint in complaints for tag in complaint.get("datasetTags", [])]
 
-        self.assertEqual(len(complaints), 500)
-        self.assertEqual(len({complaint["id"] for complaint in complaints}), 500)
+        self.assertGreaterEqual(len(complaints), 500)
+        self.assertEqual(len({complaint["id"] for complaint in complaints}), len(complaints))
         self.assertGreaterEqual(len({complaint["description"] for complaint in complaints}), 475)
         self.assertGreaterEqual(len({complaint["pipeline1Output"]["category"] for complaint in complaints}), 10)
         self.assertGreaterEqual(len({complaint["pipeline1Output"]["subcategory"] for complaint in complaints}), 20)
@@ -103,7 +135,97 @@ class TestScenarioExecution(unittest.TestCase):
         self.assertEqual(login.status_code, 200)
         response = self.client.get("/api/complaints", headers={"Authorization": f"Bearer {login.json()['token']}"})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()["complaints"]), 500)
+        self.assertGreaterEqual(len(response.json()["complaints"]), 500)
+
+
+class TestContextualHazardMatching(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        seed = load_seed()
+        cls.rules = seed["rules"]
+        cls.policies = seed["policies"]
+
+    def test_smoke_test_title_on_delivery_complaint_is_not_a_hazard(self):
+        complaint = {
+            "title": "Live no-key smoke test",
+            "description": "Routine delivery tracking inquiry for an order with no movement for two days.",
+            "requestedResolution": "Please check the latest carrier status.",
+            "productService": "NovaTab Ultra 13",
+            "orderReference": "ORD-SMOKE-TEST-01",
+            "customerType": "Standard",
+        }
+
+        result = run_rule_validation(complaint, {}, self.rules, self.policies)
+
+        self.assertEqual(result["expectedCategory"], "Delivery & Logistics")
+        self.assertFalse(result["mandatoryEscalation"])
+        self.assertNotEqual(result["expectedPriority"], "P1")
+        self.assertNotIn("RULE-SAF-01", result["matchedRules"])
+
+    def test_genuine_battery_hazards_still_trigger_critical_escalation(self):
+        descriptions = (
+            "My laptop battery is smoking and getting hot.",
+            "My laptop battery is overheating while charging.",
+            "My laptop battery caught fire during use.",
+        )
+        for description in descriptions:
+            with self.subTest(description=description):
+                result = run_rule_validation(
+                    {"title": "Battery problem", "description": description},
+                    {},
+                    self.rules,
+                    self.policies,
+                )
+                self.assertEqual(result["expectedCategory"], "Hardware & Devices")
+                self.assertEqual(result["expectedUrgency"], "Critical")
+                self.assertEqual(result["expectedPriority"], "P1")
+                self.assertTrue(result["mandatoryEscalation"])
+                self.assertIn("RULE-SAF-01", result["matchedRules"])
+
+    def test_cmp_2026_0676_delivery_review_score_has_only_real_triage_mismatches(self):
+        # CMP-2026-0676 was falsely given legal findings because "sue" matched "issue".
+        # After that false positive is removed, manual review remains expected: the saved GenAI
+        # Low/P4 assessment disagreed with the rule engine's Medium/P3 delivery triage (score 70).
+        complaint = {
+            "title": "Live pinned Gemini delivery check 2026-09-27",
+            "description": "Order ORD-LIVE-PINNED-20260927: tracking number TRK-LIVE-PINNED-927 has not updated for two days and my package has not arrived. Please check the latest carrier tracking status. There is no damage or safety issue.",
+            "requestedResolution": "Please check the current delivery status; do not issue a replacement yet.",
+            "productService": "NovaTab Ultra 13",
+            "orderReference": "ORD-LIVE-PINNED-20260927",
+            "customerType": "Standard",
+        }
+        ai_output = {
+            "primaryIssue": "Tracking status not updating",
+            "category": "Delivery & Logistics",
+            "urgency": "Low",
+            "priority": "P4",
+            "recommendedDepartment": "Logistics & Fulfillment",
+            "draftedResponse": "We will check the latest carrier tracking status and update you.",
+            "escalationRequired": False,
+            "entities": {"orderId": "ORD-LIVE-PINNED-20260927"},
+            "citedPolicies": [],
+        }
+        rule_output = run_rule_validation(complaint, ai_output, self.rules, self.policies)
+        validation = crosscheck_complaint_and_ai({
+            "complaint": complaint,
+            "pipeline1Output": ai_output,
+            "policies": self.policies,
+            "ruleMatrix": self.rules,
+        })
+        comparison = compare_outputs(ai_output, rule_output, validation)
+
+        self.assertFalse(any(finding["type"].startswith("LEGAL_") or finding["type"] == "MANDATORY_LEGAL_ESCALATION_OMITTED" for finding in validation["findings"]))
+        self.assertTrue(validation["passed"], validation["findings"])
+        self.assertEqual(rule_output["expectedUrgency"], "Medium")
+        self.assertEqual(rule_output["expectedPriority"], "P3")
+        self.assertEqual(comparison["verificationScore"], 70)
+        self.assertEqual(comparison["verificationStatus"], "Manual Review")
+
+
+class TestScenarioDocumentAPIs(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
 
     def test_document_upload_is_limited_to_administrators(self):
         body = {"filename": "policy.txt", "rawText": "A valid policy body.", "category": "Operations"}

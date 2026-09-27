@@ -29,45 +29,61 @@ export const AccessDenied: React.FC<AccessDeniedProps> = ({
 
   return (
     <div className="py-12 sm:py-20 flex items-center justify-center px-4">
-      <div className="max-w-lg w-full bg-slate-900/90 border border-amber-500/30 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-amber-950/20 text-center relative overflow-hidden backdrop-blur">
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500" />
-        
-        <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shadow-inner">
+      <div
+        className="max-w-lg w-full rounded-2xl p-6 sm:p-8 shadow-2xl text-center relative overflow-hidden backdrop-blur"
+        style={{ background: '#FFFFFF', border: '1px solid rgba(210, 21, 21, 0.25)' }}
+      >
+        <div
+          className="absolute top-0 left-0 right-0 h-1"
+          style={{ background: 'linear-gradient(90deg, #C0BCB1, #D21515, #C0BCB1)' }}
+        />
+
+        <div
+          className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center"
+          style={{ background: 'rgba(210, 21, 21, 0.08)', border: '1px solid rgba(210, 21, 21, 0.25)', color: '#D21515' }}
+        >
           <ShieldAlert className="w-8 h-8" />
         </div>
 
-        <div className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px] font-semibold mb-3">
+        <div
+          className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold mb-3"
+          style={{ background: 'rgba(210, 21, 21, 0.08)', border: '1px solid rgba(210, 21, 21, 0.25)', color: '#D21515' }}
+        >
           <Lock className="w-3 h-3" />
           <span>RBAC Access Control Violation (HTTP 403)</span>
         </div>
 
-        <h2 className="text-xl font-bold text-slate-100 mb-2">
+        <h2 className="text-xl font-bold mb-2" style={{ color: '#171717' }}>
           Restricted Portal Access
         </h2>
 
-        <p className="text-xs text-slate-300 mb-6 leading-relaxed">
-          Your current authenticated persona <span className="font-semibold text-blue-400">{currentUser?.name || currentRole}</span> with role <span className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono text-[11px] font-semibold">{currentRole}</span> does not have the required permissions to access the <span className="font-semibold text-white">{requiredRole}</span> section.
+        <p className="text-xs mb-6 leading-relaxed" style={{ color: '#3A3A3A' }}>
+          Your current authenticated persona <span className="font-semibold" style={{ color: '#D21515' }}>{currentUser?.name || currentRole}</span> with role <span className="px-1.5 py-0.5 rounded font-mono text-[11px] font-semibold" style={{ background: '#F0EFEA', color: '#D21515' }}>{currentRole}</span> does not have the required permissions to access the <span className="font-semibold" style={{ color: '#171717' }}>{requiredRole}</span> section.
         </p>
 
-        <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 mb-6 text-left space-y-2">
+        <div
+          className="rounded-xl p-3.5 mb-6 text-left space-y-2"
+          style={{ background: '#F0EFEA', border: '1px solid #C0BCB1' }}
+        >
           <div className="flex justify-between items-center text-xs">
-            <span className="text-slate-400">Current Role:</span>
-            <span className="font-semibold text-slate-200">{currentRole}</span>
+            <span style={{ color: '#6B6B6B' }}>Current Role:</span>
+            <span className="font-semibold" style={{ color: '#171717' }}>{currentRole}</span>
           </div>
           <div className="flex justify-between items-center text-xs">
-            <span className="text-slate-400">Required Role:</span>
-            <span className="font-semibold text-amber-400">{requiredRole}</span>
+            <span style={{ color: '#6B6B6B' }}>Required Role:</span>
+            <span className="font-semibold" style={{ color: '#D21515' }}>{requiredRole}</span>
           </div>
           <div className="flex justify-between items-center text-xs">
-            <span className="text-slate-400">Security Policy:</span>
-            <span className="text-slate-300">Least-Privilege Role Separation</span>
+            <span style={{ color: '#6B6B6B' }}>Security Policy:</span>
+            <span style={{ color: '#3A3A3A' }}>Least-Privilege Role Separation</span>
           </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2.5 justify-center">
           <button
             onClick={() => onSwitchRole(suggestedRole)}
-            className="inline-flex items-center justify-center space-x-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-blue-600/20 transition active:scale-95 cursor-pointer"
+            className="inline-flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-lg transition active:scale-95 cursor-pointer"
+            style={{ background: '#171717', color: '#FFFFFF', boxShadow: '0 10px 25px rgba(23, 23, 23, 0.15)' }}
           >
             <UserCheck className="w-4 h-4" />
             <span>Switch to {suggestedRole} Persona</span>
@@ -75,7 +91,8 @@ export const AccessDenied: React.FC<AccessDeniedProps> = ({
 
           <button
             onClick={onReturnToDashboard}
-            className="inline-flex items-center justify-center space-x-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-medium transition active:scale-95 cursor-pointer"
+            className="inline-flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded-xl text-xs font-medium transition active:scale-95 cursor-pointer"
+            style={{ background: '#F0EFEA', color: '#171717', border: '1px solid #C0BCB1' }}
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Return to Permitted View</span>

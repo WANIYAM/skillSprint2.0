@@ -23,7 +23,6 @@ import { INITIAL_USERS, DEPARTMENTS } from './data/initialData';
 import { RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function App() {
-  // Session & Authentication State (Requirement 1, 2, 4: Strict RBAC Session)
   const [users, setUsers] = useState<UserProfile[]>(INITIAL_USERS);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
@@ -44,7 +43,6 @@ export default function App() {
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
 
-  // Complaint & Knowledge Base State
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [policies, setPolicies] = useState<PolicyDocument[]>([]);
   const [ruleMatrix, setRuleMatrix] = useState<RuleMatrixEntry[]>([]);
@@ -53,14 +51,11 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Inspector modal state
   const [inspectComplaint, setInspectComplaint] = useState<Complaint | null>(null);
 
-  // Filter & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [currentDepartment, setCurrentDepartment] = useState('All');
 
-  // Flash Notification
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const showNotification = useCallback((type: 'success' | 'error', message: string) => {
@@ -69,7 +64,6 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Secure API fetch helper with automatic auth headers & role verification
   const apiFetch = useCallback(
     async (url: string, options: RequestInit = {}): Promise<Response> => {
       const headers = new Headers(options.headers || {});
@@ -114,7 +108,6 @@ export default function App() {
     [authToken, currentUser, showNotification]
   );
 
-  // Fetch data specifically scoped to authenticated user's role
   const fetchData = useCallback(
     async (activeUser?: UserProfile | null) => {
       const user = activeUser !== undefined ? activeUser : currentUser;
@@ -180,7 +173,6 @@ export default function App() {
     }
   }, [currentUser, authToken, fetchData]);
 
-  // Login Success Handler (Requirement 1, 4, 5: Automatic Role Routing)
   const handleLoginSuccess = (user: UserProfile, token: string) => {
     setCurrentUser(user);
     setAuthToken(token);
@@ -189,7 +181,6 @@ export default function App() {
     showNotification('success', `Welcome back, ${user.name}! Accessing ${user.role} workspace.`);
   };
 
-  // Sign Out Handler (Requirement 20: Clean Logout)
   const handleSignOut = async () => {
     try {
       if (authToken) {
@@ -209,7 +200,6 @@ export default function App() {
     showNotification('success', 'You have been safely signed out.');
   };
 
-  // Profile Update Handler
   const handleUpdateProfile = async (updated: Partial<UserProfile>) => {
     if (!currentUser) return;
     try {
@@ -230,7 +220,6 @@ export default function App() {
     }
   };
 
-  // Customer: Submit New Complaint
   const handleSubmitComplaint = async (formData: any) => {
     setIsSubmitting(true);
     try {
@@ -252,7 +241,9 @@ export default function App() {
       setComplaints((prev) => [data.complaint, ...prev]);
       showNotification(
         'success',
-        `Complaint ${data.complaint.id} received and processed through Dual-Pipeline!`
+        data.complaint.pipeline1Output?.pipelineStatus === 'GENAI_UNAVAILABLE'
+          ? `Complaint ${data.complaint.id} received and queued for manual review because GenAI analysis is unavailable.`
+          : `Complaint ${data.complaint.id} received and analyzed through GenAI and support rules.`
       );
     } catch (err: any) {
       showNotification('error', err.message || 'Submission error');
@@ -262,7 +253,6 @@ export default function App() {
     }
   };
 
-  // Agent/Customer: Send Message
   const handleSendMessage = async (complaintId: string, text: string, nextStatus?: any) => {
     try {
       const res = await apiFetch(`/api/complaints/${complaintId}/messages`, {
@@ -288,7 +278,6 @@ export default function App() {
     }
   };
 
-  // Customer: Escalation Request
   const handleCustomerEscalate = async (complaintId: string, reason: string) => {
     try {
       const res = await apiFetch(`/api/complaints/${complaintId}/escalate`, {
@@ -308,7 +297,6 @@ export default function App() {
     }
   };
 
-  // Customer: CSAT Feedback
   const handleCustomerFeedback = async (complaintId: string, rating: number, feedback: string) => {
     try {
       const res = await apiFetch(`/api/complaints/${complaintId}/feedback`, {
@@ -328,7 +316,6 @@ export default function App() {
     }
   };
 
-  // Agent: Update Status
   const handleUpdateStatus = async (complaintId: string, status: any, dept?: string, agent?: string) => {
     try {
       const res = await apiFetch(`/api/complaints/${complaintId}/status`, {
@@ -353,7 +340,6 @@ export default function App() {
     }
   };
 
-  // Reviewer: Decision (Approve / Reject / Modify / Override)
   const handleReviewDecision = async (complaintId: string, decisionData: any) => {
     try {
       const res = await apiFetch(`/api/complaints/${complaintId}/review`, {
@@ -380,7 +366,6 @@ export default function App() {
     }
   };
 
-  // Reviewer: Re-run Dual Pipeline
   const handleReAnalyze = async (complaintId: string) => {
     try {
       const res = await apiFetch(`/api/complaints/${complaintId}/re-analyze`, {
@@ -399,7 +384,6 @@ export default function App() {
     }
   };
 
-  // Administrator: Knowledge Base Handlers
   const handleUploadDocument = async (uploadData: any) => {
     const res = await apiFetch('/api/knowledge-base/upload', {
       method: 'POST',
@@ -469,7 +453,6 @@ export default function App() {
     }
   };
 
-  // Administrator: Rule Matrix Handlers
   const handleAddRule = async (ruleData: any) => {
     const res = await apiFetch('/api/rule-matrix', {
       method: 'POST',
@@ -502,7 +485,6 @@ export default function App() {
     }
   };
 
-  // Administrator: Prompt Templates
   const handleAddPromptTemplate = async (templateData: any) => {
     const res = await apiFetch('/api/prompt-templates', {
       method: 'POST',
@@ -558,7 +540,6 @@ export default function App() {
     }
   };
 
-  // Administrator: Security Test Cases
   const handleRunTestCase = async (testCaseId: string) => {
     const res = await apiFetch('/api/test-scenarios/run', {
       method: 'POST',
@@ -570,7 +551,6 @@ export default function App() {
     throw new Error('Test case run failed');
   };
 
-  // Administrator: User Management CRUD
   const handleAddUser = async (userData: any) => {
     const res = await apiFetch('/api/users', {
       method: 'POST',
@@ -606,7 +586,6 @@ export default function App() {
     }
   };
 
-  // Filter complaints by search query
   const searchedComplaints = complaints.filter((c) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -624,20 +603,24 @@ export default function App() {
     (c) => c.comparisonResult?.verificationStatus === 'Manual Review'
   ).length;
 
-  // ---------------- RENDERING ----------------
-
-  // 1. Unauthenticated View (Requirement 1, 2, 3, 4: Clean Login/Signup/Forgot flow)
   if (!currentUser || !authToken) {
     return <AuthPage onLoginSuccess={handleLoginSuccess} users={users} />;
   }
 
-  // 2. Authenticated View (Requirement 1, 6, 7, 8, 9, 10: Role-Specific View ONLY)
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white w-full overflow-x-hidden">
-        {/* Flash Toast Notification */}
+      <div
+        className="support-app min-h-screen text-slate-100 flex flex-col font-sans selection:bg-[#D21515] selection:text-[#EBE9E5] w-full overflow-x-hidden"
+        style={{
+          background:
+            'radial-gradient(circle at 15% 10%, rgba(210, 21, 21, 0.03), transparent 30rem), #F0EFEA',
+        }}
+      >
         {notification && (
-          <div className="fixed bottom-5 right-5 z-50 flex items-center space-x-2.5 px-4 py-3 rounded-xl shadow-2xl bg-slate-900 border border-slate-700 text-xs animate-in fade-in slide-in-from-bottom-2 max-w-md">
+          <div
+            className="fixed bottom-5 right-5 z-50 flex items-center space-x-2.5 px-4 py-3 rounded-xl shadow-2xl border text-xs animate-in fade-in slide-in-from-bottom-2 max-w-md"
+            style={{ background: '#171717', borderColor: 'rgba(235, 233, 229, 0.24)' }}
+          >
             {notification.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             ) : (
@@ -647,7 +630,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Role-Dedicated Navigation (Requirement 11, 12: No Role Leakage) */}
         <Navbar
           currentUser={currentUser}
           manualReviewCount={manualReviewCount}
@@ -658,18 +640,16 @@ export default function App() {
           onSignOut={handleSignOut}
         />
 
-        {/* Main Role-Specific Workspace Body */}
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-3">
-              <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
+              <RefreshCw className="w-8 h-8 text-[#D21515] animate-spin" />
               <p className="text-xs text-slate-400 font-medium">
                 Loading {currentUser.role} Workspace Data...
               </p>
             </div>
           ) : (
             <>
-              {/* Customer Experience (Requirement 6) */}
               {currentUser.role === 'Customer' && (
                 <CustomerPortal
                   complaints={searchedComplaints}
@@ -684,7 +664,6 @@ export default function App() {
                 />
               )}
 
-              {/* Agent Experience (Requirement 7) */}
               {currentUser.role === 'Agent' && (
                 <AgentDashboard
                   complaints={searchedComplaints}
@@ -697,7 +676,6 @@ export default function App() {
                 />
               )}
 
-              {/* Reviewer Experience (Requirement 8) */}
               {currentUser.role === 'Reviewer' && (
                 <ReviewerQueue
                   complaints={searchedComplaints}
@@ -708,7 +686,6 @@ export default function App() {
                 />
               )}
 
-              {/* Manager Experience (Requirement 9) */}
               {currentUser.role === 'Manager' && (
                 <ManagerDashboard
                   complaints={searchedComplaints}
@@ -717,7 +694,6 @@ export default function App() {
                 />
               )}
 
-              {/* Administrator Experience (Requirement 10) */}
               {currentUser.role === 'Administrator' && (
                 <AdminPortal
                   policies={policies}
@@ -748,7 +724,6 @@ export default function App() {
           )}
         </main>
 
-        {/* Complaint Deep-Dive Dossier Modal */}
         {inspectComplaint && (
           <ComplaintDetailModal
             complaint={inspectComplaint}
@@ -757,7 +732,6 @@ export default function App() {
           />
         )}
 
-        {/* User Profile & Active Session Modal */}
         {profileModalOpen && (
           <UserProfileModal
             isOpen={profileModalOpen}

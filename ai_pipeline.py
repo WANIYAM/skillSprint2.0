@@ -2,11 +2,14 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any
 
 
 LOGGER = logging.getLogger(__name__)
+GENAI_MODEL_ID = "gemini-3.5-flash"
+GENAI_MODEL_VERSION = "3.5-flash-05-2026"
 
 
 def _now() -> str:
@@ -86,44 +89,73 @@ Analyze the complaint and return a STRICT JSON object matching this schema:
 }}"""
 
 
-def _normalize_model_output(parsed: dict[str, Any], complaint: dict[str, Any], raw_text: str) -> dict[str, Any]:
-    primary = parsed.get("primaryIssue") or complaint.get("title", "")
-    entities = parsed.get("entities") or {
-        "orderId": complaint.get("orderReference"),
-        "deviceModel": complaint.get("productService"),
+def _validate_model_output(parsed: Any) -> dict[str, Any]:
+    required_types = {
+        "primaryIssue": str, "secondaryIssues": list, "category": str,
+        "subcategory": str, "sentiment": str, "urgency": str, "priority": str,
+        "entities": dict, "summary": str, "recommendedDepartment": str,
+        "secondaryDepartments": list, "citedPolicies": list, "resolutionSteps": list,
+        "escalationRequired": bool, "escalationTier": str, "escalationReason": str,
+        "draftedResponse": str, "responseTone": str, "followUpRequired": bool,
+        "followUpReason": str, "followUpCommunication": str,
+        "internalAgentGuidance": str, "clarificationQuestions": list,
+        "adversarialAnalysis": dict,
     }
+    if not isinstance(parsed, dict):
+        raise ValueError("GenAI response must be a JSON object")
+    for field, expected_type in required_types.items():
+        if field not in parsed or not isinstance(parsed[field], expected_type):
+            raise ValueError(f"GenAI response has a missing or invalid '{field}' field")
+    for field in ("primaryIssue", "category", "subcategory", "summary", "recommendedDepartment", "draftedResponse"):
+        if not parsed[field].strip():
+            raise ValueError(f"GenAI response has an empty '{field}' field")
+    for field in ("secondaryIssues", "secondaryDepartments", "resolutionSteps", "clarificationQuestions"):
+        if not all(isinstance(value, str) for value in parsed[field]):
+            raise ValueError(f"GenAI response has an invalid '{field}' list")
+    enum_values = {
+        "category": {"Customer Support", "Billing & Payments", "Hardware & Devices", "Delivery & Logistics", "Legal & Compliance", "Account Security", "Service & Support Quality"},
+        "sentiment": {"Frustrated", "Angry", "Neutral", "Polite / Patient", "Anxious"},
+        "urgency": {"Low", "Medium", "High", "Critical"},
+        "priority": {"P1", "P2", "P3", "P4"},
+        "escalationTier": {"None", "Supervisor Review", "Department Manager", "Specialist Team", "Compliance Review", "Critical Management Escalation"},
+        "responseTone": {"Professional", "Empathetic", "Concise", "Formal", "Apologetic", "Informative"},
+    }
+    for field, allowed in enum_values.items():
+        if parsed[field] not in allowed:
+            raise ValueError(f"GenAI response has an invalid '{field}' value")
+    entity_fields = {"orderId", "amount", "date", "deviceModel", "serialNumber", "customerEmail", "trackingNumber"}
+    if not entity_fields.issubset(parsed["entities"]) or not all(
+        isinstance(value, str) for value in parsed["entities"].values()
+    ):
+        raise ValueError("GenAI response has invalid entity values")
+    citation_fields = {"docId", "sectionId", "citationText", "relevance"}
+    if not all(
+        isinstance(item, dict)
+        and citation_fields.issubset(item)
+        and all(isinstance(item[field], str) for field in citation_fields)
+        for item in parsed["citedPolicies"]
+    ):
+        raise ValueError("GenAI response has invalid cited policies")
+    adversarial = parsed["adversarialAnalysis"]
+    if not isinstance(adversarial.get("isAdversarial"), bool) or not all(
+        isinstance(adversarial.get(field), str)
+        for field in ("threatType", "threatDetails", "recommendedAction")
+    ):
+        raise ValueError("GenAI response has invalid adversarial analysis")
+    if adversarial["threatType"] not in {"None", "Prompt Injection", "Social Engineering", "Unauthorized Payout Request", "Directive Override"}:
+        raise ValueError("GenAI response has an invalid adversarial threat type")
+    return parsed
+
+
+def _normalize_model_output(parsed: dict[str, Any], raw_text: str) -> dict[str, Any]:
     return {
-        "primaryIssue": primary,
-        "secondaryIssues": parsed.get("secondaryIssues") if isinstance(parsed.get("secondaryIssues"), list) else [],
-        "category": parsed.get("category") or "Customer Support",
-        "subcategory": parsed.get("subcategory") or "General Inquiry",
-        "sentiment": parsed.get("sentiment") or "Neutral",
-        "urgency": parsed.get("urgency") or "Medium",
-        "priority": parsed.get("priority") or "P3",
-        "entities": entities,
-        "summary": parsed.get("summary") or f"Customer reporting {primary} regarding {complaint.get('productService', '')}.",
-        "recommendedDepartment": parsed.get("recommendedDepartment") or "Customer Support",
-        "secondaryDepartments": parsed.get("secondaryDepartments") if isinstance(parsed.get("secondaryDepartments"), list) else [],
-        "citedPolicies": parsed.get("citedPolicies") if isinstance(parsed.get("citedPolicies"), list) else [],
-        "resolutionSteps": parsed.get("resolutionSteps") if isinstance(parsed.get("resolutionSteps"), list) else ["Acknowledge and inspect ticket"],
-        "escalationRequired": bool(parsed.get("escalationRequired")),
-        "escalationTier": parsed.get("escalationTier") or "None",
-        "escalationReason": parsed.get("escalationReason") or "Standard processing workflow",
-        "draftedResponse": parsed.get("draftedResponse") or f"Dear Customer, Thank you for contacting SupportNova regarding {complaint.get('productService', '')}. We have received your inquiry and are reviewing the details under our support policy.",
-        "responseTone": parsed.get("responseTone") or "Professional",
-        "followUpRequired": bool(parsed.get("followUpRequired")),
-        "followUpReason": parsed.get("followUpReason") or "Routine resolution tracking",
-        "followUpCommunication": parsed.get("followUpCommunication") or "Follow-up within standard SLA window.",
-        "internalAgentGuidance": parsed.get("internalAgentGuidance") or "Review customer documentation before completing resolution.",
-        "clarificationQuestions": parsed.get("clarificationQuestions") if isinstance(parsed.get("clarificationQuestions"), list) else [],
-        "adversarialAnalysis": parsed.get("adversarialAnalysis") or {
-            "isAdversarial": False, "threatType": "None",
-            "threatDetails": "No adversarial prompt injection patterns identified.",
-            "recommendedAction": "Proceed with standard triage workflow.",
-        },
+        **parsed,
         "rawJson": raw_text,
-        "modelUsed": "gemini-2.5-flash",
+        "modelUsed": GENAI_MODEL_ID,
+        "modelRequested": GENAI_MODEL_ID,
+        "modelVersion": GENAI_MODEL_VERSION,
         "generatedAt": _now(),
+        "pipelineStatus": "COMPLETED",
     }
 
 
@@ -147,13 +179,14 @@ def _base_output(complaint: dict[str, Any], entities: dict[str, Any], **values: 
         "followUpReason": "Routine resolution tracking", "followUpCommunication": "Follow up in 24 hours if no response received.",
         "internalAgentGuidance": "Review customer purchase history and verify eligibility before making commitments.",
         "clarificationQuestions": [], "adversarialAnalysis": {"isAdversarial": False, "threatType": "None", "threatDetails": "Standard support inquiry.", "recommendedAction": "Standard agent assistance."},
-        "modelUsed": "SupportNova-Intelligence-Offline", "generatedAt": _now(),
+        "modelUsed": "OFFLINE_DEMO_MODE_NOT_GENAI", "generatedAt": _now(),
+        "pipelineStatus": "OFFLINE_DEMO_MODE_NOT_GENAI", "isSimulatedOutput": True,
     }
     output.update(values)
     return output
 
 
-def _deterministic_output(complaint: dict[str, Any], policies: list[dict[str, Any]]) -> dict[str, Any]:
+def _offline_demo_preview(complaint: dict[str, Any], policies: list[dict[str, Any]]) -> dict[str, Any]:
     text = " ".join(str(complaint.get(field, "") or "") for field in ("title", "description", "requestedResolution")).lower()
     entities = _entities(text, complaint.get("productService", ""), complaint.get("orderReference", ""))
     if any(term in text for term in ("furious", "unacceptable", "lawsuit", "outraged", "terrible", "worst")):
@@ -180,20 +213,56 @@ def _deterministic_output(complaint: dict[str, Any], policies: list[dict[str, An
     return _base_output(complaint, entities, sentiment=sentiment)
 
 
+def _generate_content(prompt: str, api_key: str) -> str:
+    from google import genai
+
+    client = genai.Client(api_key=api_key, http_options={"headers": {"User-Agent": "aistudio-build"}})
+    response = client.models.generate_content(
+        model=GENAI_MODEL_ID,
+        contents=[{"role": "user", "parts": [{"text": prompt}]}],
+        config={"response_mime_type": "application/json", "temperature": 0.1},
+    )
+    raw_text = getattr(response, "text", "") or ""
+    if not raw_text.strip():
+        raise ValueError("GenAI returned an empty response")
+    return raw_text
+
+
+def _genai_failure(error: str, error_code: str, attempts: int) -> dict[str, Any]:
+    return {
+        "pipelineStatus": "GENAI_UNAVAILABLE",
+        "errorCode": error_code,
+        "error": error,
+        "attempts": attempts,
+        "modelUsed": None,
+        "modelRequested": GENAI_MODEL_ID,
+        "modelVersion": GENAI_MODEL_VERSION,
+        "generatedAt": _now(),
+    }
+
+
 def run_ai_pipeline(complaint: dict[str, Any], policies: list[dict[str, Any]], prompt_template: str = "") -> dict[str, Any]:
     api_key = os.getenv("GEMINI_API_KEY")
-    if api_key:
-        try:
-            from google import genai
+    if not api_key:
+        error = "GEMINI_API_KEY is not configured"
+        LOGGER.error("Pipeline 1: GenAI unavailable: %s", error)
+        return _genai_failure(error, "GENAI_API_KEY_MISSING", 0)
 
-            client = genai.Client(api_key=api_key, http_options={"headers": {"User-Agent": "aistudio-build"}})
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[{"role": "user", "parts": [{"text": f"{prompt_template}\n\n{build_pipeline_prompt(complaint, policies, '')}"}]}],
-                config={"response_mime_type": "application/json", "temperature": 0.1},
-            )
-            raw_text = getattr(response, "text", "") or ""
-            return _normalize_model_output(json.loads(raw_text), complaint, raw_text)
+    prompt = f"{prompt_template}\n\n{build_pipeline_prompt(complaint, policies, '')}"
+    last_error = "GenAI request failed"
+    last_error_code = "GENAI_REQUEST_FAILED"
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            raw_text = _generate_content(prompt, api_key)
+            parsed = _validate_model_output(json.loads(raw_text))
+            return _normalize_model_output(parsed, raw_text)
         except Exception as error:
-            LOGGER.warning("Pipeline 1: GenAI API call failed or timed out; using deterministic fallback: %s", error)
-    return _deterministic_output(complaint, policies)
+            last_error = str(error) or error.__class__.__name__
+            last_error_code = "GENAI_INVALID_RESPONSE" if isinstance(error, (json.JSONDecodeError, ValueError)) else "GENAI_REQUEST_FAILED"
+            LOGGER.warning("Pipeline 1: GenAI attempt %d/%d failed: %s", attempt, max_attempts, last_error)
+            if attempt < max_attempts:
+                time.sleep(0.25 * (2 ** (attempt - 1)))
+
+    LOGGER.error("Pipeline 1: GenAI unavailable after %d attempts: %s", max_attempts, last_error)
+    return _genai_failure(last_error, last_error_code, max_attempts)

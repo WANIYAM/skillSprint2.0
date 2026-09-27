@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from ai_pipeline import run_ai_pipeline
-from database import Base, SessionLocal, engine, init_db
+from database import SessionLocal, init_db
 from dataset_expansion import expand_seed
 from models import Complaint, Policy, PromptTemplate, RegisteredUser, RuleMatrix
 from rule_engine import compare_outputs, run_rule_validation
@@ -148,7 +148,10 @@ def seed_database() -> None:
         ]
         for model, values in mappings:
             for value in values:
-                if db.get(model, value["id"]):
+                row = db.get(model, value["id"])
+                if row:
+                    if model is RuleMatrix or (model is Complaint and value.get("isRepeat")):
+                        row.payload = value
                     continue
                 row = model(id=value["id"], payload=value)
                 if model is RegisteredUser:
@@ -373,7 +376,7 @@ def get_complaints(department: str | None = None, status: str | None = None, ver
     if status and status != "All":
         items = [x for x in items if x.get("status") == status]
     if verificationStatus and verificationStatus != "All":
-        items = [x for x in items if x.get("comparisonResult", {}).get("verificationStatus") == verificationStatus]
+        items = [x for x in items if (x.get("comparisonResult") or {}).get("verificationStatus") == verificationStatus or (verificationStatus == "Manual Review" and (x.get("pipeline1Output") or {}).get("pipelineStatus") == "GENAI_UNAVAILABLE")]
     if search:
         q = search.lower()
         items = [x for x in items if any(q in str(x.get(k, "")).lower() for k in ("id", "title", "customerName", "productService", "orderReference"))]
@@ -407,19 +410,25 @@ def create_complaint(body: dict[str, Any], user: dict[str, Any] = Depends(curren
     prompts = collection(PromptTemplate, db)
     active_prompt = next((x for x in prompts if x.get("status") == "Active"), {})
     ai = run_ai_pipeline(complaint_input, policies, active_prompt.get("systemPrompt", ""))
-    rule = run_rule_validation(complaint_input, ai, collection(RuleMatrix, db), policies)
-    validation = crosscheck_complaint_and_ai({"complaint": complaint_input, "pipeline1Output": ai, "policies": policies, "ruleMatrix": collection(RuleMatrix, db)})
-    comparison = compare_outputs(ai, rule, validation)
+    genai_completed = ai.get("pipelineStatus") == "COMPLETED"
+    if genai_completed:
+        rule = run_rule_validation(complaint_input, ai, collection(RuleMatrix, db), policies)
+        validation = crosscheck_complaint_and_ai({"complaint": complaint_input, "pipeline1Output": ai, "policies": policies, "ruleMatrix": collection(RuleMatrix, db)})
+        comparison = compare_outputs(ai, rule, validation)
+        ground_truth_blocked = bool(comparison.get("groundTruthBlocked")) or bool(validation and not validation.get("passed", True))
+    else:
+        rule = validation = comparison = None
+        ground_truth_blocked = True
     hours = 4 if body.get("customerType") in ("Enterprise", "Premium VIP") else 24
     deadline = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat().replace("+00:00", "Z")
     existing = collection(Complaint, db)
     complaint = {
         **complaint_input, "id": f"CMP-2026-{101 + len(existing):04d}", "rawDescription": body["description"],
-        "validationStatus": "VALID", "channel": body.get("channel", "Web Portal"), "submittedAt": now(),
+        "validationStatus": "FLAGGED" if ground_truth_blocked else "VALID", "channel": body.get("channel", "Web Portal"), "submittedAt": now(),
         "customerEmail": user.get("email") if user.get("id") else body.get("customerEmail", "customer@example.com"),
         "customerName": user.get("name") if user.get("id") else body.get("customerName", "Customer User"),
-        "status": "Escalated" if rule["mandatoryEscalation"] else ("Analyzed" if comparison["verificationStatus"] == "Manual Review" else "Assigned"),
-        "assignedDepartment": comparison["finalRecommendedDepartment"], "slaHours": hours, "slaDeadline": deadline, "slaRiskStatus": "Safe",
+        "status": "Analyzed" if not genai_completed else ("Escalated" if rule["mandatoryEscalation"] or ground_truth_blocked else ("Analyzed" if comparison["verificationStatus"] == "Manual Review" else "Assigned")),
+        "assignedDepartment": comparison.get("finalRecommendedDepartment", "Customer Support") if comparison else "Customer Support", "slaHours": hours, "slaDeadline": deadline, "slaRiskStatus": "Safe",
         "pipeline1Output": ai, "pipeline2Output": rule, "pythonValidation": validation, "comparisonResult": comparison,
         "auditTrail": [], "messages": [], "isRepeat": False, "repeatCount": 0, "requestedResolution": body.get("requestedResolution", ""),
     }
@@ -546,15 +555,16 @@ def review(complaint_id: str, body: dict[str, Any], _: dict[str, Any] = Depends(
         "overriddenResponse": body.get("overriddenResponse"),
         "notes": notes,
     }
+    item["comparisonResult"] = item.get("comparisonResult") or {}
     if decision == "Approved":
-        item.setdefault("comparisonResult", {})["verificationStatus"] = "Verified"
-        item["status"] = "Escalated" if item.get("pipeline1Output", {}).get("escalationRequired") else "Assigned"
+        item["comparisonResult"]["verificationStatus"] = "Verified"
+        item["status"] = "Escalated" if (item.get("pipeline1Output") or {}).get("escalationRequired") else "Assigned"
     elif decision in {"Modified", "Reclassified", "Reassigned"}:
         if body.get("overriddenDepartment"):
             item["assignedDepartment"] = body["overriddenDepartment"]
         if body.get("overriddenResponse") and item.get("pipeline1Output"):
             item["pipeline1Output"]["draftedResponse"] = body["overriddenResponse"]
-        item.setdefault("comparisonResult", {})["verificationStatus"] = "Verified"
+        item["comparisonResult"]["verificationStatus"] = "Verified"
         item["status"] = "Assigned"
     elif decision == "Escalated":
         item["status"] = "Escalated"
@@ -587,15 +597,21 @@ def reanalyze(complaint_id: str, db: Session = Depends(db_session)):
     ai = run_ai_pipeline(item, active_policies, active_template.get("systemPrompt", ""))
     ai["promptTemplateId"] = active_template.get("id")
     ai["promptVersion"] = active_template.get("version")
-    rule = run_rule_validation(item, ai, collection(RuleMatrix, db), active_policies)
-    validation = crosscheck_complaint_and_ai({"complaint": item, "pipeline1Output": ai, "policies": active_policies, "ruleMatrix": collection(RuleMatrix, db)})
-    item.update(pipeline1Output=ai, pipeline2Output=rule, pythonValidation=validation, comparisonResult=compare_outputs(ai, rule, validation))
+    genai_completed = ai.get("pipelineStatus") == "COMPLETED"
+    if genai_completed:
+        rule = run_rule_validation(item, ai, collection(RuleMatrix, db), active_policies)
+        validation = crosscheck_complaint_and_ai({"complaint": item, "pipeline1Output": ai, "policies": active_policies, "ruleMatrix": collection(RuleMatrix, db)})
+        comparison = compare_outputs(ai, rule, validation)
+    else:
+        rule = validation = comparison = None
+        item.update(status="Analyzed", assignedDepartment="Customer Support")
+    item.update(pipeline1Output=ai, pipeline2Output=rule, pythonValidation=validation, comparisonResult=comparison)
     item.setdefault("auditTrail", []).append({
         "id": f"aud-{secrets.token_hex(5)}",
         "timestamp": now(),
         "actor": "System Re-analysis",
         "action": "Dual Pipeline Re-executed",
-        "details": f"Re-evaluated against {len(active_policies)} ground-truth policies and prompt v{active_template.get('version')}. Verification score: {item['comparisonResult'].get('verificationScore')}% ({item['comparisonResult'].get('verificationStatus')}).",
+        "details": f"Re-evaluated against {len(active_policies)} ground-truth policies and prompt v{active_template.get('version')}. " + (f"Verification score: {comparison.get('verificationScore')}% ({comparison.get('verificationStatus')})." if comparison else "GenAI unavailable; routed to manual review without a pipeline comparison."),
     })
     row.payload = deepcopy(item)
     db.commit()
@@ -864,7 +880,7 @@ def add_prompt(body: dict[str, Any], user: dict[str, Any] = Depends(require_role
         raise HTTPException(400, {"error": "Template name and systemPrompt are required.", "code": "VALIDATION_ERROR"})
     operation = body.get("operation", "Classification")
     version = body.get("version", "1.0.0")
-    model = body.get("model", "gemini-2.5-flash")
+    model = body.get("model", "gemini-3.5-flash")
     try:
         temperature = float(body.get("temperature", 0.2)) or 0.2
     except (TypeError, ValueError):
@@ -1024,6 +1040,20 @@ def run_test_scenario(body: dict[str, Any], db: Session = Depends(db_session)):
     prompt = active_template.get("systemPrompt", "") if active_template else ""
 
     pipeline1 = run_ai_pipeline(sample, active_policies, prompt)
+    if pipeline1.get("pipelineStatus") != "COMPLETED":
+        return {
+            "success": True,
+            "result": {
+                "scenarioId": scenario_id,
+                "status": "Failed",
+                "assertions": [{
+                    "name": "GenAI analysis completed",
+                    "passed": False,
+                    "actual": pipeline1.get("pipelineStatus"),
+                }],
+                "outputs": {"pipeline1": pipeline1, "pipeline2": None, "pythonValidation": None, "comparison": None},
+            },
+        }
     pipeline2 = run_rule_validation(sample, pipeline1, rules, active_policies)
     python_validation = crosscheck_complaint_and_ai({
         "complaint": sample,
@@ -1132,8 +1162,12 @@ def analytics(db: Session = Depends(db_session)):
     items = collection(Complaint, db)
     total = len(items)
     resolved = sum(x.get("status") in ("Resolved", "Closed") for x in items)
-    verified = sum(x.get("comparisonResult", {}).get("verificationStatus") == "Verified" for x in items)
-    manual_review = sum(x.get("comparisonResult", {}).get("verificationStatus") == "Manual Review" for x in items)
+    verified = sum((x.get("comparisonResult") or {}).get("verificationStatus") == "Verified" for x in items)
+    manual_review = sum(
+        (x.get("comparisonResult") or {}).get("verificationStatus") == "Manual Review"
+        or (x.get("pipeline1Output") or {}).get("pipelineStatus") == "GENAI_UNAVAILABLE"
+        for x in items
+    )
     escalated = sum(x.get("status") == "Escalated" for x in items)
     sla_counts = {"Safe": 0, "Approaching": 0, "Breached": 0}
     department_counts: dict[str, int] = {}
@@ -1144,9 +1178,9 @@ def analytics(db: Session = Depends(db_session)):
         department = item.get("assignedDepartment")
         department_key = department if department is not None else "undefined"
         department_counts[department_key] = department_counts.get(department_key, 0) + 1
-        category = item.get("pipeline1Output", {}).get("category") or "Uncategorized"
+        category = (item.get("pipeline1Output") or {}).get("category") or "Uncategorized"
         category_counts[category] = category_counts.get(category, 0) + 1
-        total_discrepancies += len(item.get("comparisonResult", {}).get("discrepancies") or [])
+        total_discrepancies += len((item.get("comparisonResult") or {}).get("discrepancies") or [])
     return {
         "metrics": {
             "totalComplaints": total,
@@ -1171,26 +1205,26 @@ def analytics(db: Session = Depends(db_session)):
 def validation_report(db: Session = Depends(db_session)):
     items = collection(Complaint, db)
     total = len(items)
-    verified = sum(x.get("comparisonResult", {}).get("verificationStatus") == "Verified" for x in items)
+    verified = sum((x.get("comparisonResult") or {}).get("verificationStatus") == "Verified" for x in items)
     flagged = sum(
         item.get("pythonValidation") is not None
-        and not item.get("pythonValidation", {}).get("passed")
+        and not (item.get("pythonValidation") or {}).get("passed")
         for item in items
     )
     duplicate_count = sum(bool(x.get("isDuplicate")) for x in items)
     repeat_count = sum(bool(x.get("isRepeat")) for x in items)
     mean_score = round(
-        sum(x.get("comparisonResult", {}).get("verificationScore") or 0 for x in items) / total
+        sum((x.get("comparisonResult") or {}).get("verificationScore") or 0 for x in items) / total
     ) if total else 0
     recent_audits = [
         {
             "id": item.get("id"),
             "title": item.get("title"),
-            "category": item.get("pipeline1Output", {}).get("category"),
-            "aiUrgency": item.get("pipeline1Output", {}).get("urgency"),
-            "ruleUrgency": item.get("pipeline2Output", {}).get("expectedUrgency"),
-            "pythonScore": item.get("pythonValidation", {}).get("validationScore"),
-            "verificationStatus": item.get("comparisonResult", {}).get("verificationStatus"),
+            "category": (item.get("pipeline1Output") or {}).get("category"),
+            "aiUrgency": (item.get("pipeline1Output") or {}).get("urgency"),
+            "ruleUrgency": (item.get("pipeline2Output") or {}).get("expectedUrgency"),
+            "pythonScore": (item.get("pythonValidation") or {}).get("validationScore"),
+            "verificationStatus": (item.get("comparisonResult") or {}).get("verificationStatus"),
             "isDuplicate": item.get("isDuplicate"),
         }
         for item in items[-10:]

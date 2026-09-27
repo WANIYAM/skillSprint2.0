@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Pagination } from './Pagination';
 import type {
   PolicyDocument,
   RuleMatrixEntry,
@@ -66,6 +67,23 @@ interface AdminPortalProps {
   departments: string[];
 }
 
+/* ---------- Palette tokens ---------- */
+const PAL = {
+  olive: '#373F51',
+  gold: '#58A4B0',
+  sienna: '#A9BCD0',
+  oliveGold: '#506176',
+  mahogany: '#293241',
+  bg: '#373F51',
+  card: 'rgba(41, 50, 65, 0.94)',
+  cardSoft: 'rgba(80, 97, 118, 0.24)',
+  border: 'rgba(169, 188, 208, 0.22)',
+  borderStrong: 'rgba(88, 164, 176, 0.48)',
+  text: '#F4F6FA',
+  text2: '#D8DBE2',
+  text3: '#A9BCD0',
+};
+
 export const AdminPortal: React.FC<AdminPortalProps> = ({
   policies = [],
   ruleMatrix = [],
@@ -91,11 +109,41 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   departments = [],
 }) => {
   const [activeTab, setActiveTab] = useState<'policies' | 'ruleMatrix' | 'prompts' | 'security' | 'users'>('policies');
+  const [policyPage, setPolicyPage] = useState(1);
+  const [rulePage, setRulePage] = useState(1);
+  const [securityPage, setSecurityPage] = useState(1);
+  const [userPage, setUserPage] = useState(1);
+  const adminPageSize = 8;
+  const activePolicyCount = policies.filter((policy) => policy.status === 'Active').length;
+  const adminRoleCounts = (['Customer', 'Agent', 'Reviewer', 'Manager', 'Administrator'] as UserRole[]).map((role) => ({
+    label: role === 'Administrator' ? 'Admin' : role,
+    count: users.filter((user) => user.role === role).length,
+  }));
+  const maxAdminRoleCount = Math.max(...adminRoleCounts.map((item) => item.count), 1);
 
   // User Management State
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [userSearch, setUserSearch] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('All');
+  const filteredUsers = users.filter((user) => {
+    if (userRoleFilter !== 'All' && user.role !== userRoleFilter) return false;
+    if (!userSearch.trim()) return true;
+    const query = userSearch.toLowerCase();
+    return (
+      user.name.toLowerCase().includes(query) ||
+      user.email.toLowerCase().includes(query) ||
+      (user.department || '').toLowerCase().includes(query) ||
+      (user.company || '').toLowerCase().includes(query)
+    );
+  });
+  const currentUserPage = Math.min(userPage, Math.max(1, Math.ceil(filteredUsers.length / adminPageSize)));
+  const visibleUsers = filteredUsers.slice((currentUserPage - 1) * adminPageSize, currentUserPage * adminPageSize);
+  const currentPolicyPage = Math.min(policyPage, Math.max(1, Math.ceil(policies.length / adminPageSize)));
+  const visiblePolicies = policies.slice((currentPolicyPage - 1) * adminPageSize, currentPolicyPage * adminPageSize);
+  const currentRulePage = Math.min(rulePage, Math.max(1, Math.ceil(ruleMatrix.length / adminPageSize)));
+  const visibleRules = ruleMatrix.slice((currentRulePage - 1) * adminPageSize, currentRulePage * adminPageSize);
+  const currentSecurityPage = Math.min(securityPage, Math.max(1, Math.ceil(testCases.length / adminPageSize)));
+  const visibleSecurityTests = testCases.slice((currentSecurityPage - 1) * adminPageSize, currentSecurityPage * adminPageSize);
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('Agent');
@@ -126,7 +174,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [ruleEscalationTier, setRuleEscalationTier] = useState<EscalationTier>('None');
   const [ruleSla, setRuleSla] = useState(24);
 
-  // Document File Upload State (Requirements vi, vii, viii, ix, x)
+  // Document File Upload State
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadDocumentId, setUploadDocumentId] = useState(() => `POL-UPL-${Date.now().toString(36).toUpperCase()}`);
@@ -139,7 +187,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccessInfo, setUploadSuccessInfo] = useState<any | null>(null);
 
-  // Prompt Template Management State (Requirements lii, liii)
+  // Prompt Template Management State
   const [selectedPromptId, setSelectedPromptId] = useState<string>(
     promptTemplates.length > 0 ? promptTemplates[0].id : 'TPL-GEMINI-CORE'
   );
@@ -156,7 +204,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [newTplOperation, setNewTplOperation] = useState<PromptTemplate['operation']>('Response Generation');
   const [newTplSystemPrompt, setNewTplSystemPrompt] = useState('');
 
-  // Update promptText when activePrompt changes
   React.useEffect(() => {
     if (activePrompt) {
       setPromptText(activePrompt.systemPrompt);
@@ -230,7 +277,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     }
   };
 
-
   // Security test results state
   const [testResult, setTestResult] = useState<any>(null);
   const [runningTestId, setRunningTestId] = useState<string | null>(null);
@@ -295,166 +341,254 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     }
   };
 
+  /* ----------------------------------------------------------------
+     SHARED STYLES
+  ---------------------------------------------------------------- */
+  const cardStyle: React.CSSProperties = {
+    background: '#FFFFFF',
+    border: `1px solid ${PAL.border}`,
+    borderRadius: '1rem',
+    boxShadow: 'inset 0 1px rgba(255, 238, 194, 0.05), 0 12px 28px rgba(0, 0, 0, 0.22)',
+  };
+
+  const inputStyle: React.CSSProperties = {
+    background: 'rgba(13, 15, 10, 0.9)',
+    border: `1px solid rgba(215, 190, 130, 0.4)`,
+    color: PAL.text,
+    borderRadius: '0.6rem',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '0.75rem',
+  };
+
+  const goldBtn: React.CSSProperties = {
+    background: 'linear-gradient(180deg, #e8b85e 0%, #d59837 100%)',
+    color: '#21170b',
+    fontWeight: 700,
+    border: 'none',
+    boxShadow: '0 10px 24px rgba(211, 145, 44, 0.3)',
+    borderRadius: '0.6rem',
+    letterSpacing: '0.02em',
+  };
+
+  const subtleBtn: React.CSSProperties = {
+    background: 'rgba(81, 90, 71, 0.4)',
+    color: PAL.text2,
+    border: `1px solid rgba(215, 190, 130, 0.25)`,
+    borderRadius: '0.6rem',
+  };
+
+  const monoLabel: React.CSSProperties = {
+    fontFamily: 'JetBrains Mono, monospace',
+    fontSize: '10px',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    color: PAL.text3,
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 shadow-xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="admin-dashboard role-dashboard space-y-6">
+      {/* ============================================================
+          HEADER
+      ============================================================ */}
+      <div
+        className="rounded-2xl p-6 shadow-xl relative overflow-hidden"
+        style={{
+          background: 'linear-gradient(120deg, rgba(81, 90, 71, 0.55), rgba(117, 92, 27, 0.28) 55%, rgba(64, 4, 6, 0.32))',
+          border: `1px solid ${PAL.borderStrong}`,
+        }}
+      >
+        <div
+          className="absolute top-0 left-0 right-0 h-[3px]"
+          style={{ background: 'linear-gradient(90deg, #515A47 0%, #D7BE82 35%, #7A4419 65%, #400406 100%)' }}
+        />
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div>
             <div className="flex items-center space-x-2">
-              <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+              <span
+                className="admin-header-text px-2.5 py-0.5 text-[10px] font-semibold rounded uppercase tracking-widest font-mono"
+                style={{
+                  background: 'rgba(215, 190, 130, 0.16)',
+                  color: PAL.gold,
+                  border: `1px solid rgba(215, 190, 130, 0.4)`,
+                }}
+              >
                 System Administration
               </span>
-              <span className="text-xs text-slate-400">
-                Knowledge Base & Ground-Truth Rule Governance
+              <span className="admin-header-text text-xs" style={{ color: PAL.text2 }}>
+                Policies, support rules, and team accounts
               </span>
             </div>
-            <h1 className="text-2xl font-bold text-white mt-1">
-              Administrator Control Center
+            <h1 className="admin-header-text text-2xl font-bold mt-2 tracking-tight" style={{ color: '#ffffff' }}>
+              Admin dashboard
             </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Manage organizational policy documents, author the Complaint Resolution Rule Matrix, and configure LLM prompt templates.
+            <p className="admin-header-text text-xs mt-1 max-w-2xl" style={{ color: PAL.text3 }}>
+              Manage support policies, routing rules, AI reply settings, security checks, and team accounts.
             </p>
           </div>
 
           {/* Tab Selector */}
-          <div className="flex items-center space-x-1 bg-slate-900/80 p-1.5 rounded-xl border border-slate-700/60 text-xs overflow-x-auto scrollbar-none whitespace-nowrap">
-            <button
-              onClick={() => setActiveTab('policies')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-                activeTab === 'policies'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>Policies ({(policies ?? []).length})</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('ruleMatrix')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-                activeTab === 'ruleMatrix'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Grid className="w-3.5 h-3.5" />
-              <span>Rule Matrix ({(ruleMatrix ?? []).length})</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('prompts')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-                activeTab === 'prompts'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <FileCode className="w-3.5 h-3.5" />
-              <span>Prompt Templates</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('security')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-                activeTab === 'security'
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <ShieldAlert className="w-3.5 h-3.5" />
-              <span>Security Suite</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('users')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 shrink-0 ${
-                activeTab === 'users'
-                  ? 'bg-cyan-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>Users & RBAC ({(users ?? []).length})</span>
-            </button>
+          <div
+            className="flex items-center space-x-1 p-1.5 rounded-xl border text-xs overflow-x-auto scrollbar-none whitespace-nowrap"
+            style={{ background: 'rgba(13, 15, 10, 0.85)', borderColor: 'rgba(215, 190, 130, 0.25)' }}
+          >
+            {[
+              { id: 'policies', icon: BookOpen, label: `Policies (${(policies ?? []).length})` },
+              { id: 'ruleMatrix', icon: Grid, label: `Rule Matrix (${(ruleMatrix ?? []).length})` },
+              { id: 'prompts', icon: FileCode, label: 'Prompts' },
+              { id: 'security', icon: ShieldAlert, label: 'Security' },
+              { id: 'users', icon: Users, label: `Users (${(users ?? []).length})` },
+            ].map(({ id, icon: Icon, label }) => {
+              const isActive = activeTab === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id as any)}
+                  className="px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center space-x-1.5 shrink-0 font-mono text-[11px] tracking-wider"
+                  style={
+                    isActive
+                      ? { background: 'linear-gradient(180deg, #e8b85e 0%, #d59837 100%)', color: '#21170b', boxShadow: '0 6px 18px rgba(211, 145, 44, 0.3)' }
+                      : { color: PAL.text3 }
+                  }
+                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.color = PAL.gold; }}
+                  onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.color = PAL.text3; }}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* Tab Content */}
+      {/* ============================================================
+          ANALYTICS
+      ============================================================ */}
+      <section className="role-analytics" aria-label="Administration overview">
+        <div className="role-kpi-grid">
+          {[
+            { label: 'Active policies', value: activePolicyCount, note: `${policies.length} total policies`, tone: 'gold' },
+            { label: 'Support rules', value: ruleMatrix.length, note: 'Used to route requests', tone: 'olive' },
+            { label: 'AI settings', value: promptTemplates.length, note: 'Reply and review templates', tone: 'sienna' },
+            { label: 'Team members', value: users.length, note: 'Across all roles', tone: 'mahogany' },
+          ].map((item) => (
+            <div className={`role-kpi role-kpi-${item.tone}`} key={item.label}>
+              <span>{item.label}</span><strong>{item.value}</strong><small>{item.note}</small>
+            </div>
+          ))}
+        </div>
+
+        <div className="role-chart-card">
+          <div className="role-chart-title">
+            <div><strong>Team members</strong><small>Accounts by role</small></div>
+            <Users className="w-4 h-4" style={{ color: PAL.gold }} />
+          </div>
+          <div className="role-bar-chart mt-4">
+            {adminRoleCounts.map((item, index) => (
+              <div className="role-bar-row" key={item.label}>
+                <span>{item.label}</span>
+                <div>
+                  <i
+                    className={`role-bar-${(['gold', 'olive', 'sienna', 'mahogany'] as const)[index % 4]}`}
+                    style={{ width: `${users.length ? Math.max(item.count / maxAdminRoleCount * 100, item.count ? 8 : 0) : 0}%` }}
+                  />
+                </div>
+                <b>{item.count}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ============================================================
+          TAB: POLICIES
+      ============================================================ */}
       {activeTab === 'policies' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-white flex items-center space-x-2">
-              <BookOpen className="w-4 h-4 text-blue-400" />
-              <span>Approved Knowledge Base Documents</span>
+            <h2 className="text-sm font-bold flex items-center space-x-2" style={{ color: '#ffffff' }}>
+              <BookOpen className="w-4 h-4" style={{ color: PAL.gold }} />
+              <span>Support policies</span>
             </h2>
             <div className="flex items-center space-x-2">
               <button
-                onClick={() => {
-                  setIsUploadingDoc(true);
-                  setIsAddingPolicy(false);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition cursor-pointer shadow-md shadow-indigo-600/20"
+                onClick={() => { setIsUploadingDoc(true); setIsAddingPolicy(false); }}
+                className="px-3 py-1.5 text-xs font-semibold flex items-center space-x-1.5 transition cursor-pointer"
+                style={goldBtn}
               >
                 <UploadCloud className="w-3.5 h-3.5" />
                 <span>Upload PDF / DOCX</span>
               </button>
               <button
-                onClick={() => {
-                  setIsAddingPolicy(true);
-                  setIsUploadingDoc(false);
-                }}
-                className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold flex items-center space-x-1 transition cursor-pointer"
+                onClick={() => { setIsAddingPolicy(true); setIsUploadingDoc(false); }}
+                className="px-3 py-1.5 text-xs font-semibold flex items-center space-x-1 transition cursor-pointer"
+                style={subtleBtn}
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Manual Policy Form</span>
+                <span>Add policy manually</span>
               </button>
             </div>
           </div>
 
-          {/* Upload Document Modal / Python Parsing Form (Requirements vi, vii, viii, ix, x) */}
+          {/* Upload Modal */}
           {isUploadingDoc && (
             <form
               onSubmit={handleDocumentUploadSubmit}
-              className="bg-slate-800/90 border border-indigo-500/40 rounded-xl p-5 space-y-4 shadow-xl"
+              className="p-5 space-y-4"
+              style={{
+                background: 'rgba(20, 22, 14, 0.94)',
+                border: `1px solid rgba(215, 190, 130, 0.45)`,
+                borderRadius: '1rem',
+                boxShadow: '0 20px 50px rgba(0, 0, 0, 0.4)',
+              }}
             >
-              <div className="flex items-center justify-between pb-2 border-b border-slate-700">
+              <div className="flex items-center justify-between pb-2" style={{ borderBottom: `1px solid ${PAL.border}` }}>
                 <div className="flex items-center space-x-2">
-                  <UploadCloud className="w-4 h-4 text-indigo-400" />
-                  <span className="text-xs font-bold text-white">
-                    Upload & Parse Policy Document (PDF, DOCX, TXT)
+                  <UploadCloud className="w-4 h-4" style={{ color: PAL.gold }} />
+                  <span className="text-xs font-bold" style={{ color: '#ffffff' }}>
+                    Upload a policy document (PDF, DOCX, TXT)
                   </span>
-                  <span className="px-2 py-0.5 text-[10px] rounded bg-indigo-500/20 text-indigo-300 font-mono">
-                    Python 3.10 Engine
+                  <span
+                    className="px-2 py-0.5 text-[10px] rounded font-mono"
+                    style={{ background: 'rgba(215, 190, 130, 0.15)', color: PAL.gold, border: `1px solid rgba(215, 190, 130, 0.3)` }}
+                  >
+                    Auto reader
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsUploadingDoc(false)}
-                  className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
+                  className="text-xs cursor-pointer"
+                  style={{ color: PAL.text3 }}
                 >
                   Cancel
                 </button>
               </div>
 
               {uploadError && (
-                <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center space-x-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                <div
+                  className="p-3 rounded-lg text-xs flex items-center space-x-2"
+                  style={{ background: 'rgba(64, 4, 6, 0.4)', border: '1px solid rgba(142, 55, 54, 0.5)', color: '#e0a1a0' }}
+                >
+                  <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: '#e0a1a0' }} />
                   <span>{uploadError}</span>
                 </div>
               )}
 
               {uploadSuccessInfo && (
-                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center space-x-2">
-                  <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                <div
+                  className="p-3 rounded-lg text-xs flex items-center space-x-2"
+                  style={{ background: 'rgba(81, 90, 71, 0.35)', border: '1px solid rgba(116, 131, 101, 0.55)', color: '#a7bc8d' }}
+                >
+                  <CheckCircle className="w-4 h-4 shrink-0" style={{ color: '#a7bc8d' }} />
                   <span>{uploadSuccessInfo.message || 'Document parsed into traceable chunks and indexed!'}</span>
                 </div>
               )}
 
-              {/* File Dropzone */}
-              <div className="border-2 border-dashed border-slate-700 hover:border-indigo-500/60 rounded-xl p-6 text-center transition bg-slate-900/40">
+              <div
+                className="border-2 border-dashed rounded-xl p-6 text-center transition"
+                style={{ borderColor: 'rgba(215, 190, 130, 0.35)', background: 'rgba(13, 15, 10, 0.6)' }}
+              >
                 <input
                   type="file"
                   id="policy-file-upload"
@@ -475,34 +609,31 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       }
                       setUploadError(null);
                       setUploadFile(file);
-                      if (!uploadTitle) {
-                        setUploadTitle(file.name.replace(/\.[^/.]+$/, ''));
-                      }
+                      if (!uploadTitle) setUploadTitle(file.name.replace(/\.[^/.]+$/, ''));
                     }
                   }}
                   className="hidden"
                 />
-                <label
-                  htmlFor="policy-file-upload"
-                  className="cursor-pointer flex flex-col items-center space-y-2"
-                >
-                  <FileUp className="w-8 h-8 text-indigo-400" />
-                  <span className="text-xs font-semibold text-slate-200">
+                <label htmlFor="policy-file-upload" className="cursor-pointer flex flex-col items-center space-y-2">
+                  <FileUp className="w-8 h-8" style={{ color: PAL.gold }} />
+                  <span className="text-xs font-semibold" style={{ color: PAL.text }}>
                     {uploadFile ? (
-                      <span className="text-indigo-300 font-mono">{uploadFile.name} ({(uploadFile.size / 1024).toFixed(1)} KB)</span>
+                      <span className="font-mono" style={{ color: PAL.gold }}>
+                        {uploadFile.name} ({(uploadFile.size / 1024).toFixed(1)} KB)
+                      </span>
                     ) : (
-                      'Click to select or drag & drop PDF, DOCX, TXT policy files'
+                      'Choose or drop a PDF, DOCX, or TXT policy file'
                     )}
                   </span>
-                  <span className="text-[11px] text-slate-500">
-                    Automated Python content extraction, validation, and traceable section chunking
+                  <span className="text-[11px]" style={{ color: PAL.text3 }}>
+                    We'll read the document and prepare it for use in support replies.
                   </span>
                 </label>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
                 <div>
-                  <label className="block text-slate-300 mb-1">Document ID</label>
+                  <label className="block mb-1" style={monoLabel}>Document ID</label>
                   <input
                     type="text"
                     value={uploadDocumentId}
@@ -510,31 +641,34 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     required
                     pattern="[A-Za-z0-9]+(-[A-Za-z0-9]+)*"
                     maxLength={80}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Document Title (Auto-inferred if blank)</label>
+                  <label className="block mb-1" style={monoLabel}>Title</label>
                   <input
                     type="text"
                     value={uploadTitle}
                     onChange={(e) => setUploadTitle(e.target.value)}
                     placeholder="e.g. Return and Refund Guidelines v2.0"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Category</label>
+                  <label className="block mb-1" style={monoLabel}>Category</label>
                   <input
                     type="text"
                     value={uploadCategory}
                     onChange={(e) => setUploadCategory(e.target.value)}
                     required
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Version (Requirement x)</label>
+                  <label className="block mb-1" style={monoLabel}>Version</label>
                   <input
                     type="text"
                     value={uploadVersion}
@@ -542,49 +676,53 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     placeholder="2.0"
                     required
                     pattern="[0-9]+(\.[0-9]+){0,3}(-[A-Za-z0-9.-]+)?"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Effective Date</label>
+                  <label className="block mb-1" style={monoLabel}>Effective Date</label>
                   <input
                     type="date"
                     value={uploadEffectiveDate}
                     onChange={(e) => setUploadEffectiveDate(e.target.value)}
                     required
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Expiry Date (optional)</label>
+                  <label className="block mb-1" style={monoLabel}>Expiry Date (optional)</label>
                   <input
                     type="date"
                     value={uploadExpiryDate}
                     min={uploadEffectiveDate || undefined}
                     onChange={(e) => setUploadExpiryDate(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
               </div>
 
               <div className="flex items-center justify-between pt-2">
-                <span className="text-[11px] text-slate-400">
-                  Uploading a newer version of an existing policy will automatically mark the prior version as <strong className="text-amber-400">Superseded</strong>.
+                <span className="text-[11px]" style={{ color: PAL.text3 }}>
+                  Uploading a newer version will replace the previous version, which will be marked <strong style={{ color: PAL.gold }}>Superseded</strong>.
                 </span>
                 <button
                   type="submit"
                   disabled={uploadParsing || !uploadFile}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center space-x-1.5 cursor-pointer shadow-md"
+                  className="px-4 py-2 text-xs font-semibold flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                  style={goldBtn}
                 >
                   {uploadParsing ? (
                     <>
                       <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                      <span>Python Extracting & Chunking...</span>
+                      <span>Reading document...</span>
                     </>
                   ) : (
                     <>
                       <UploadCloud className="w-3.5 h-3.5" />
-                      <span>Parse & Ingest with Python</span>
+                      <span>Read and save policy</span>
                     </>
                   )}
                 </button>
@@ -592,106 +730,113 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </form>
           )}
 
-          {/* Add Policy Modal / Inline Form */}
+          {/* Add Policy */}
           {isAddingPolicy && (
-            <form onSubmit={handleCreatePolicy} className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-700">
-                <span className="text-xs font-bold text-white">Add New Policy Document (Manual)</span>
-                <button
-                  type="button"
-                  onClick={() => setIsAddingPolicy(false)}
-                  className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
-                >
+            <form onSubmit={handleCreatePolicy} className="p-5 space-y-4" style={cardStyle}>
+              <div className="flex items-center justify-between pb-2" style={{ borderBottom: `1px solid ${PAL.border}` }}>
+                <span className="text-xs font-bold" style={{ color: '#ffffff' }}>Add New Policy Document (Manual)</span>
+                <button type="button" onClick={() => setIsAddingPolicy(false)} className="text-xs cursor-pointer" style={{ color: PAL.text3 }}>
                   Cancel
                 </button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div>
-                  <label className="block text-slate-300 mb-1">Document Title</label>
+                  <label className="block mb-1" style={monoLabel}>Document Title</label>
                   <input
                     type="text"
                     value={newPolicyTitle}
                     onChange={(e) => setNewPolicyTitle(e.target.value)}
                     required
                     placeholder="e.g. VIP Concierge Support SOP"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Category</label>
+                  <label className="block mb-1" style={monoLabel}>Category</label>
                   <input
                     type="text"
                     value={newPolicyCategory}
                     onChange={(e) => setNewPolicyCategory(e.target.value)}
                     required
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Version</label>
+                  <label className="block mb-1" style={monoLabel}>Version</label>
                   <input
                     type="text"
                     value={newPolicyVersion}
                     onChange={(e) => setNewPolicyVersion(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-slate-300 text-xs mb-1">Document Summary & Rules</label>
+                <label className="block text-xs mb-1" style={monoLabel}>Document Summary & Rules</label>
                 <textarea
                   value={newPolicySummary}
                   onChange={(e) => setNewPolicySummary(e.target.value)}
                   rows={3}
                   required
                   placeholder="Detail the policy conditions, deadlines, and constraints..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-100"
+                  className="w-full p-2"
+                  style={inputStyle}
                 />
               </div>
 
               <div className="flex justify-end">
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold cursor-pointer"
-                >
+                <button type="submit" className="px-4 py-2 text-xs font-semibold cursor-pointer" style={goldBtn}>
                   Save Policy to Knowledge Base
                 </button>
               </div>
             </form>
           )}
 
-          {/* Policy Document Cards */}
+          {/* Policy Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(policies ?? []).map((pol) => (
+            {visiblePolicies.map((pol) => (
               <div
                 key={pol.id}
-                className={`bg-slate-800/60 border rounded-xl p-5 space-y-3 transition ${
-                  pol.status === 'Superseded'
-                    ? 'border-amber-500/30 opacity-75'
-                    : pol.processingStatus === 'INVALID'
-                    ? 'border-rose-500/40 bg-rose-950/10'
-                    : 'border-slate-700/60'
-                }`}
+                className="admin-policy-card p-5 space-y-3 transition"
+                style={{
+                  background: pol.status === 'Superseded' ? 'rgba(20, 22, 14, 0.75)' : PAL.card,
+                  border: `1px solid ${
+                    pol.processingStatus === 'INVALID'
+                      ? 'rgba(142, 55, 54, 0.5)'
+                      : pol.status === 'Superseded'
+                      ? 'rgba(117, 92, 27, 0.5)'
+                      : PAL.border
+                  }`,
+                  borderRadius: '1rem',
+                  boxShadow: 'inset 0 1px rgba(255, 238, 194, 0.05), 0 12px 28px rgba(0, 0, 0, 0.18)',
+                }}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <span className="font-mono text-xs font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                    <span
+                      className="font-mono text-xs font-bold px-2 py-0.5 rounded"
+                      style={{ background: 'rgba(215, 190, 130, 0.12)', color: PAL.gold, border: `1px solid rgba(215, 190, 130, 0.3)` }}
+                    >
                       {pol.id}
                     </span>
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider font-mono" style={{ color: PAL.text3 }}>
                       v{pol.version}
                     </span>
                     {pol.processingStatus && (
                       <span
-                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                        className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider font-mono"
+                        style={
                           pol.processingStatus === 'PARSED'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            ? { background: 'rgba(81, 90, 71, 0.4)', color: '#a7bc8d', border: '1px solid rgba(116, 131, 101, 0.5)' }
                             : pol.processingStatus === 'INVALID'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                        }`}
+                            ? { background: 'rgba(64, 4, 6, 0.4)', color: '#e0a1a0', border: '1px solid rgba(142, 55, 54, 0.5)' }
+                            : { background: 'rgba(117, 92, 27, 0.3)', color: PAL.gold, border: '1px solid rgba(117, 92, 27, 0.5)' }
+                        }
                       >
                         {pol.processingStatus}
                       </span>
@@ -700,27 +845,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                   <div className="flex items-center space-x-2">
                     <span
-                      className={`px-2 py-0.5 text-[10px] font-semibold rounded ${
+                      className="px-2 py-0.5 text-[10px] font-semibold rounded font-mono"
+                      style={
                         pol.status === 'Active'
-                          ? 'bg-emerald-500/20 text-emerald-400'
+                          ? { background: 'rgba(81, 90, 71, 0.35)', color: '#a7bc8d', border: '1px solid rgba(116, 131, 101, 0.5)' }
                           : pol.status === 'Superseded'
-                          ? 'bg-amber-500/20 text-amber-400'
-                          : 'bg-slate-700 text-slate-400'
-                      }`}
+                          ? { background: 'rgba(117, 92, 27, 0.3)', color: PAL.gold, border: '1px solid rgba(117, 92, 27, 0.5)' }
+                          : { background: 'rgba(81, 90, 71, 0.25)', color: PAL.text3, border: `1px solid ${PAL.border}` }
+                      }
                     >
                       {pol.status}
                     </span>
 
-                    {/* Version Control Toggle (Requirement x) */}
                     {onTogglePolicyStatus && (
                       <button
                         onClick={() =>
-                          onTogglePolicyStatus(
-                            pol.id,
-                            pol.status === 'Active' ? 'Superseded' : 'Active'
-                          )
+                          onTogglePolicyStatus(pol.id, pol.status === 'Active' ? 'Superseded' : 'Active')
                         }
-                        className="text-[10px] text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                        className="text-[10px] cursor-pointer underline"
+                        style={{ color: PAL.gold }}
                         title="Toggle Active vs Superseded version status"
                       >
                         {pol.status === 'Active' ? 'Mark Outdated' : 'Set Active'}
@@ -729,7 +872,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                     <button
                       onClick={() => onDeletePolicy(pol.id)}
-                      className="text-slate-400 hover:text-rose-400 p-1 rounded transition cursor-pointer"
+                      className="p-1 rounded transition cursor-pointer"
+                      style={{ color: PAL.text3 }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = '#e0a1a0'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = PAL.text3; }}
                       title="Delete Policy"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -737,38 +883,40 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   </div>
                 </div>
 
-                <h3 className="text-sm font-semibold text-white">
+                <h3 className="text-sm font-semibold" style={{ color: '#ffffff' }}>
                   {pol.title}
                 </h3>
-                <p className="text-xs text-slate-300 leading-relaxed">
+                <p className="text-xs leading-relaxed" style={{ color: PAL.text2 }}>
                   {pol.summary}
                 </p>
 
-                {/* Metadata & Checksum info */}
-                <div className="grid grid-cols-3 gap-2 py-1.5 px-2 bg-slate-900/60 rounded-lg border border-slate-800 text-[10px] text-slate-400 font-mono">
+                <div
+                  className="admin-policy-subcard grid grid-cols-3 gap-2 py-1.5 px-2 rounded-lg text-[10px] font-mono"
+                  style={{ background: 'rgba(13, 15, 10, 0.6)', border: `1px solid ${PAL.border}` }}
+                >
                   <div>
-                    <span className="text-slate-500 block">FILE TYPE</span>
-                    <span className="text-slate-200 font-semibold">{pol.fileType || 'SOP DOC'}</span>
+                    <span className="block" style={{ color: PAL.text3 }}>FILE TYPE</span>
+                    <span className="font-semibold" style={{ color: PAL.text }}>{pol.fileType || 'SOP DOC'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">SIZE</span>
-                    <span className="text-slate-200">{pol.fileSize ? `${Math.round(pol.fileSize / 1024)} KB` : '42 KB'}</span>
+                    <span className="block" style={{ color: PAL.text3 }}>SIZE</span>
+                    <span style={{ color: PAL.text }}>{pol.fileSize ? `${Math.round(pol.fileSize / 1024)} KB` : '42 KB'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block">CHECKSUM</span>
-                    <span className="text-blue-400 truncate block">{pol.checksum || 'sha256-verified'}</span>
+                    <span className="block" style={{ color: PAL.text3 }}>CHECKSUM</span>
+                    <span className="truncate block" style={{ color: PAL.gold }}>{pol.checksum || 'sha256-verified'}</span>
                   </div>
                 </div>
 
-                {/* Sections & Traceable Chunks */}
-                <div className="space-y-1.5 pt-2 border-t border-slate-700/60">
+                <div className="space-y-1.5 pt-2" style={{ borderTop: `1px solid ${PAL.border}` }}>
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    <span className="text-[10px] font-bold uppercase tracking-wider block font-mono" style={{ color: PAL.text3 }}>
                       Traceable Chunks ({(pol.sections ?? []).length})
                     </span>
                     <button
                       onClick={() => setInspectPolicyChunks(pol)}
-                      className="text-[10px] text-blue-400 hover:text-blue-300 font-medium cursor-pointer"
+                      className="text-[10px] font-medium cursor-pointer"
+                      style={{ color: PAL.gold }}
                     >
                       Inspect All Chunks
                     </button>
@@ -776,17 +924,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   {(pol.sections ?? []).slice(0, 2).map((sec) => (
                     <div
                       key={sec.id}
-                      className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 text-xs"
+                      className="admin-policy-subcard p-2.5 rounded-lg text-xs"
+                      style={{ background: 'rgba(13, 15, 10, 0.6)', border: `1px solid ${PAL.border}` }}
                     >
-                      <div className="flex items-center justify-between text-slate-300 font-semibold mb-1">
+                      <div className="flex items-center justify-between font-semibold mb-1" style={{ color: PAL.text2 }}>
                         <span>[{sec.id}] {sec.heading}</span>
                         {sec.wordCount && (
-                          <span className="text-[10px] text-slate-500 font-mono">
+                          <span className="text-[10px] font-mono" style={{ color: PAL.text3 }}>
                             {sec.wordCount} words • ~{sec.tokenEstimate || Math.round(sec.wordCount * 1.3)} tokens
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-400 leading-normal line-clamp-2">
+                      <p className="text-[11px] leading-normal line-clamp-2" style={{ color: PAL.text3 }}>
                         {sec.content}
                       </p>
                     </div>
@@ -794,34 +943,36 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   {(pol.sections ?? []).length > 2 && (
                     <button
                       onClick={() => setInspectPolicyChunks(pol)}
-                      className="w-full text-center text-[10px] text-slate-400 hover:text-slate-300 py-1 bg-slate-900/40 rounded border border-slate-800/80 cursor-pointer"
+                      className="admin-policy-subcard w-full text-center text-[10px] py-1 rounded cursor-pointer"
+                      style={{ color: PAL.text3, background: 'rgba(13, 15, 10, 0.5)', border: `1px solid ${PAL.border}` }}
                     >
                       +{(pol.sections ?? []).length - 2} more chunks...
                     </button>
                   )}
                 </div>
 
-                {/* Version History Accordion / List (Requirement x) */}
                 {(pol.versionHistory ?? []).length > 0 && (
-                  <div className="pt-2 border-t border-slate-700/60 space-y-1.5">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  <div className="pt-2 space-y-1.5" style={{ borderTop: `1px solid ${PAL.border}` }}>
+                    <span className="text-[10px] font-bold uppercase tracking-wider block font-mono" style={{ color: PAL.text3 }}>
                       Version History ({(pol.versionHistory ?? []).length} previous)
                     </span>
                     <div className="space-y-1 max-h-28 overflow-y-auto">
                       {(pol.versionHistory ?? []).map((vh, vIdx) => (
                         <div
                           key={vIdx}
-                          className="flex items-center justify-between p-1.5 bg-slate-900/40 rounded border border-slate-800/60 text-[10px]"
+                          className="admin-policy-subcard flex items-center justify-between p-1.5 rounded text-[10px]"
+                          style={{ background: 'rgba(13, 15, 10, 0.5)', border: `1px solid ${PAL.border}` }}
                         >
                           <div className="space-x-1.5 truncate">
-                            <span className="font-mono font-bold text-slate-300">v{vh.version}</span>
-                            <span className="text-slate-500">({vh.effectiveDate})</span>
-                            <span className="text-slate-400 truncate">{vh.summary}</span>
+                            <span className="font-mono font-bold" style={{ color: PAL.text2 }}>v{vh.version}</span>
+                            <span style={{ color: PAL.text3 }}>({vh.effectiveDate})</span>
+                            <span className="truncate" style={{ color: PAL.text2 }}>{vh.summary}</span>
                           </div>
                           {onRollbackPolicy && (
                             <button
                               onClick={() => onRollbackPolicy(pol.id, vh.version)}
-                              className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 text-[9px] font-semibold cursor-pointer shrink-0 ml-2"
+                              className="px-2 py-0.5 rounded text-[9px] font-semibold cursor-pointer shrink-0 ml-2"
+                              style={{ background: 'rgba(215, 190, 130, 0.15)', color: PAL.gold, border: `1px solid rgba(215, 190, 130, 0.3)` }}
                             >
                               Rollback
                             </button>
@@ -834,51 +985,75 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
             ))}
           </div>
+          <Pagination page={currentPolicyPage} pageSize={adminPageSize} totalItems={policies.length} onPageChange={setPolicyPage} />
         </div>
       )}
 
-      {/* Traceable Chunks Inspector Modal */}
+      {/* ============================================================
+          POLICY CHUNKS INSPECTOR MODAL
+      ============================================================ */}
       {inspectPolicyChunks && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(13, 15, 10, 0.85)', backdropFilter: 'blur(6px)' }}
+        >
+          <div
+            className="max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl"
+            style={{
+              background: 'rgba(20, 22, 14, 0.98)',
+              border: `1px solid ${PAL.borderStrong}`,
+              borderRadius: '1rem',
+            }}
+          >
+            <div className="p-5 flex items-center justify-between" style={{ borderBottom: `1px solid ${PAL.border}` }}>
               <div>
-                <h3 className="text-sm font-bold text-white flex items-center space-x-2">
-                  <FileText className="w-4 h-4 text-blue-400" />
+                <h3 className="text-sm font-bold flex items-center space-x-2" style={{ color: '#ffffff' }}>
+                  <FileText className="w-4 h-4" style={{ color: PAL.gold }} />
                   <span>Traceable Chunks: {inspectPolicyChunks.title} (v{inspectPolicyChunks.version})</span>
                 </h3>
-                <span className="text-xs text-slate-400">
+                <span className="text-xs" style={{ color: PAL.text3 }}>
                   {(inspectPolicyChunks.sections ?? []).length} deterministic chunks indexed for retrieval
                 </span>
               </div>
               <button
                 onClick={() => setInspectPolicyChunks(null)}
-                className="text-slate-400 hover:text-white text-xs cursor-pointer px-2 py-1 bg-slate-800 rounded-lg"
+                className="text-xs cursor-pointer px-2 py-1 rounded-lg"
+                style={{ color: PAL.text2, background: 'rgba(81, 90, 71, 0.35)', border: `1px solid ${PAL.border}` }}
               >
                 Close
               </button>
             </div>
             <div className="p-5 overflow-y-auto space-y-3 flex-1">
               {(inspectPolicyChunks.sections ?? []).map((sec, idx) => (
-                <div key={sec.id || idx} className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                <div
+                  key={sec.id || idx}
+                  className="p-3.5 rounded-xl space-y-1.5"
+                  style={{ background: 'rgba(13, 15, 10, 0.7)', border: `1px solid ${PAL.border}` }}
+                >
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-blue-400">
+                    <span className="font-mono text-xs font-bold" style={{ color: PAL.gold }}>
                       [{sec.id}] {sec.heading}
                     </span>
-                    <span className="text-[10px] font-mono text-slate-500">
+                    <span className="text-[10px] font-mono" style={{ color: PAL.text3 }}>
                       Hash: {sec.checksum || 'sha256'} • ~{sec.tokenEstimate || 30} tokens
                     </span>
                   </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">
+                  <p className="text-xs leading-relaxed" style={{ color: PAL.text2 }}>
                     {sec.content}
                   </p>
                   {sec.mandatoryConditions && sec.mandatoryConditions.length > 0 && (
-                    <div className="text-[11px] text-emerald-400 bg-emerald-950/20 p-2 rounded border border-emerald-900/30">
+                    <div
+                      className="text-[11px] p-2 rounded"
+                      style={{ background: 'rgba(81, 90, 71, 0.3)', border: '1px solid rgba(116, 131, 101, 0.5)', color: '#a7bc8d' }}
+                    >
                       <strong>Mandatory Conditions:</strong> {sec.mandatoryConditions.join('; ')}
                     </div>
                   )}
                   {sec.prohibitions && sec.prohibitions.length > 0 && (
-                    <div className="text-[11px] text-rose-400 bg-rose-950/20 p-2 rounded border border-rose-900/30">
+                    <div
+                      className="text-[11px] p-2 rounded"
+                      style={{ background: 'rgba(64, 4, 6, 0.35)', border: '1px solid rgba(142, 55, 54, 0.5)', color: '#e0a1a0' }}
+                    >
                       <strong>Prohibitions:</strong> {sec.prohibitions.join('; ')}
                     </div>
                   )}
@@ -889,30 +1064,33 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         </div>
       )}
 
-      {/* Prompts Tab (Requirements lii, liii) */}
+      {/* ============================================================
+          TAB: PROMPTS
+      ============================================================ */}
       {activeTab === 'prompts' && (
-        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-700/60 gap-3">
+        <div className="p-6 space-y-5" style={cardStyle}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 gap-3" style={{ borderBottom: `1px solid ${PAL.border}` }}>
             <div>
-              <h2 className="text-sm font-bold text-white flex items-center space-x-2">
-                <FileCode className="w-4 h-4 text-blue-400" />
-                <span>AI Prompt Template Management & Version History</span>
+              <h2 className="text-sm font-bold flex items-center space-x-2" style={{ color: '#ffffff' }}>
+                <FileCode className="w-4 h-4" style={{ color: PAL.gold }} />
+                <span>AI reply settings and versions</span>
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Manage and version AI instruction prompts for classification, response drafting, missing info detection, and validation.
+              <p className="text-xs mt-0.5" style={{ color: PAL.text3 }}>
+                Choose how AI sorts requests, drafts replies, and checks for missing details.
               </p>
             </div>
 
             <div className="flex items-center space-x-2">
               {promptSaved && (
-                <span className="text-xs text-emerald-400 flex items-center space-x-1 font-semibold">
+                <span className="text-xs flex items-center space-x-1 font-semibold" style={{ color: '#a7bc8d' }}>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Prompt Saved & Versioned</span>
+                  <span>Settings saved</span>
                 </span>
               )}
               <button
                 onClick={() => setIsAddingPromptTpl(true)}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold flex items-center space-x-1 cursor-pointer"
+                className="px-3 py-1.5 text-xs font-semibold flex items-center space-x-1 cursor-pointer"
+                style={goldBtn}
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>New Template</span>
@@ -921,45 +1099,56 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           </div>
 
           {/* Template Selector Tabs */}
-          <div className="flex flex-wrap gap-2 pb-2 border-b border-slate-700/40">
-            {(promptTemplates ?? []).map((tpl) => (
-              <button
-                key={tpl.id}
-                onClick={() => setSelectedPromptId(tpl.id)}
-                className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-2 transition cursor-pointer ${
-                  (activePrompt?.id === tpl.id)
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                    : 'bg-slate-900/80 text-slate-300 hover:bg-slate-900 border border-slate-700/60'
-                }`}
-              >
-                <span>{tpl.name}</span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] bg-black/30 text-slate-200 font-mono">
-                  v{tpl.version}
-                </span>
-              </button>
-            ))}
+          <div className="flex flex-wrap gap-2 pb-2" style={{ borderBottom: `1px solid ${PAL.border}` }}>
+            {(promptTemplates ?? []).map((tpl) => {
+              const isActive = activePrompt?.id === tpl.id;
+              return (
+                <button
+                  key={tpl.id}
+                  onClick={() => setSelectedPromptId(tpl.id)}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-2 transition cursor-pointer"
+                  style={
+                    isActive
+                      ? { background: 'linear-gradient(180deg, #e8b85e 0%, #d59837 100%)', color: '#21170b', boxShadow: '0 8px 22px rgba(211, 145, 44, 0.3)' }
+                      : { background: 'rgba(13, 15, 10, 0.7)', color: PAL.text2, border: `1px solid ${PAL.border}` }
+                  }
+                >
+                  <span>{tpl.name}</span>
+                  <span
+                    className="px-1.5 py-0.5 rounded text-[9px] font-mono"
+                    style={
+                      isActive
+                        ? { background: 'rgba(33, 23, 11, 0.25)', color: '#21170b' }
+                        : { background: 'rgba(215, 190, 130, 0.15)', color: PAL.gold }
+                    }
+                  >
+                    v{tpl.version}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {activePrompt && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
-                <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                  <span className="text-[10px] text-slate-500 uppercase block font-semibold">Template ID & Purpose</span>
-                  <span className="font-mono text-blue-400 font-bold block">{activePrompt.id}</span>
-                  <span className="text-[11px] text-slate-300 truncate block">{activePrompt.purpose || 'Operation prompt'}</span>
+                <div className="p-3 rounded-xl" style={{ background: 'rgba(13, 15, 10, 0.7)', border: `1px solid ${PAL.border}` }}>
+                  <span className="block font-semibold" style={monoLabel}>Template ID & Purpose</span>
+                  <span className="font-mono font-bold block" style={{ color: PAL.gold }}>{activePrompt.id}</span>
+                  <span className="text-[11px] truncate block" style={{ color: PAL.text2 }}>{activePrompt.purpose || 'Operation prompt'}</span>
                 </div>
-                <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                  <span className="text-[10px] text-slate-500 uppercase block font-semibold">Model Engine & Operation</span>
-                  <span className="font-mono text-white block">{activePrompt.model}</span>
-                  <span className="text-[10px] text-purple-400 font-semibold">{activePrompt.operation || 'Response Generation'}</span>
+                <div className="p-3 rounded-xl" style={{ background: 'rgba(13, 15, 10, 0.7)', border: `1px solid ${PAL.border}` }}>
+                  <span className="block font-semibold" style={monoLabel}>Model & Operation</span>
+                  <span className="font-mono block" style={{ color: PAL.text }}>{activePrompt.model}</span>
+                  <span className="text-[10px] font-semibold" style={{ color: PAL.gold }}>{activePrompt.operation || 'Response Generation'}</span>
                 </div>
-                <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                  <span className="text-[10px] text-slate-500 uppercase block font-semibold">Version & Last Updated</span>
-                  <span className="text-emerald-400 font-semibold block">v{activePrompt.version} ({activePrompt.status})</span>
-                  <span className="text-[10px] text-slate-400">{activePrompt.lastUpdated} by {activePrompt.author || 'AI Admin'}</span>
+                <div className="p-3 rounded-xl" style={{ background: 'rgba(13, 15, 10, 0.7)', border: `1px solid ${PAL.border}` }}>
+                  <span className="block font-semibold" style={monoLabel}>Version & Updated</span>
+                  <span className="font-semibold block" style={{ color: '#a7bc8d' }}>v{activePrompt.version} ({activePrompt.status})</span>
+                  <span className="text-[10px]" style={{ color: PAL.text3 }}>{activePrompt.lastUpdated} by {activePrompt.author || 'AI Admin'}</span>
                 </div>
-                <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                  <span className="text-[10px] text-slate-500 uppercase block font-semibold">Temperature ({promptTemperature})</span>
+                <div className="p-3 rounded-xl" style={{ background: 'rgba(13, 15, 10, 0.7)', border: `1px solid ${PAL.border}` }}>
+                  <span className="block font-semibold" style={monoLabel}>Temperature ({promptTemperature})</span>
                   <input
                     type="range"
                     min="0"
@@ -967,18 +1156,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     step="0.05"
                     value={promptTemperature}
                     onChange={(e) => setPromptTemperature(Number(e.target.value))}
-                    className="w-full mt-2 accent-blue-500"
+                    className="w-full mt-2"
+                    style={{ accentColor: PAL.gold }}
                   />
                 </div>
               </div>
 
-              {/* Variables Placeholders Badge */}
               {(activePrompt.variables ?? []).length > 0 && (
-                <div className="flex items-center space-x-2 text-xs bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Available Variables:</span>
+                <div
+                  className="flex items-center space-x-2 text-xs p-2.5 rounded-xl"
+                  style={{ background: 'rgba(13, 15, 10, 0.6)', border: `1px solid ${PAL.border}` }}
+                >
+                  <span className="font-bold font-mono" style={{ ...monoLabel, color: PAL.text2 }}>Available Variables:</span>
                   <div className="flex flex-wrap gap-1.5">
                     {(activePrompt.variables ?? []).map((v) => (
-                      <span key={v} className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 font-mono text-[10px] text-blue-300">
+                      <span
+                        key={v}
+                        className="px-2 py-0.5 rounded font-mono text-[10px]"
+                        style={{ background: 'rgba(215, 190, 130, 0.12)', color: PAL.gold, border: `1px solid rgba(215, 190, 130, 0.3)` }}
+                      >
                         {`{${v}}`}
                       </span>
                     ))}
@@ -987,28 +1183,35 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               )}
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label className="block text-xs font-semibold mb-1 font-mono uppercase tracking-widest" style={{ color: PAL.gold }}>
                   System Prompt Directive (Version Controlled)
                 </label>
                 <textarea
                   value={promptText}
                   onChange={(e) => setPromptText(e.target.value)}
                   rows={10}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 font-mono text-xs text-slate-200 leading-relaxed focus:outline-none focus:border-blue-500"
+                  className="w-full p-3 font-mono text-xs leading-relaxed"
+                  style={{
+                    background: 'rgba(13, 15, 10, 0.9)',
+                    border: `1px solid rgba(215, 190, 130, 0.35)`,
+                    color: PAL.text,
+                    borderRadius: '0.75rem',
+                  }}
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Changelog Note (Saved to version history)
+                  <label className="block text-xs font-semibold mb-1 font-mono uppercase tracking-widest" style={{ color: PAL.gold }}>
+                    Changelog Note
                   </label>
                   <input
                     type="text"
                     value={promptChangelog}
                     onChange={(e) => setPromptChangelog(e.target.value)}
                     placeholder="e.g. Added stricter refund check for 30+ days policies"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-100"
+                    className="w-full p-2.5 text-xs"
+                    style={inputStyle}
                   />
                 </div>
                 <div className="flex items-end">
@@ -1025,7 +1228,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       setPromptChangelog('');
                       setTimeout(() => setPromptSaved(false), 2500);
                     }}
-                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 shadow-md shadow-blue-600/30 cursor-pointer"
+                    className="w-full py-2.5 text-xs font-semibold flex items-center justify-center space-x-1.5 cursor-pointer"
+                    style={goldBtn}
                   >
                     <Save className="w-4 h-4" />
                     <span>Save & Deploy New Version</span>
@@ -1033,33 +1237,34 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 </div>
               </div>
 
-              {/* Version History Timeline (Requirement liii) */}
               {(activePrompt.history ?? []).length > 0 && (
-                <div className="pt-4 border-t border-slate-700/60 space-y-2">
-                  <span className="text-xs font-bold text-white flex items-center space-x-1.5">
-                    <span>Version History Timeline ({(activePrompt.history ?? []).length} versions)</span>
+                <div className="pt-4 space-y-2" style={{ borderTop: `1px solid ${PAL.border}` }}>
+                  <span className="text-xs font-bold flex items-center space-x-1.5 font-mono uppercase tracking-widest" style={{ color: PAL.gold }}>
+                    Version History Timeline ({(activePrompt.history ?? []).length})
                   </span>
                   <div className="space-y-2 max-h-56 overflow-y-auto">
                     {(activePrompt.history ?? []).map((h, hIdx) => (
                       <div
                         key={hIdx}
-                        className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex items-center justify-between text-xs"
+                        className="p-3 rounded-xl flex items-center justify-between text-xs"
+                        style={{ background: 'rgba(13, 15, 10, 0.7)', border: `1px solid ${PAL.border}` }}
                       >
                         <div className="space-y-0.5 max-w-lg">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-mono font-bold text-blue-400">v{h.version}</span>
-                            <span className="text-slate-500 text-[10px]">({h.updatedAt})</span>
-                            {h.author && <span className="text-slate-400 text-[10px]">by {h.author}</span>}
-                            <span className="text-[10px] font-mono text-slate-400">Temp: {h.temperature}</span>
+                          <div className="flex items-center space-x-2 font-mono">
+                            <span className="font-bold" style={{ color: PAL.gold }}>v{h.version}</span>
+                            <span className="text-[10px]" style={{ color: PAL.text3 }}>({h.updatedAt})</span>
+                            {h.author && <span className="text-[10px]" style={{ color: PAL.text2 }}>by {h.author}</span>}
+                            <span className="text-[10px]" style={{ color: PAL.text3 }}>Temp: {h.temperature}</span>
                           </div>
-                          <p className="text-[11px] text-slate-300 italic">
+                          <p className="text-[11px] italic" style={{ color: PAL.text2 }}>
                             "{h.changelog}"
                           </p>
                         </div>
                         {onRollbackPrompt && (
                           <button
                             onClick={() => onRollbackPrompt(activePrompt.id, h.version)}
-                            className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold border border-slate-700 cursor-pointer"
+                            className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer"
+                            style={subtleBtn}
                           >
                             Rollback to v{h.version}
                           </button>
@@ -1074,15 +1279,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         </div>
       )}
 
-      {/* Add New Prompt Template Modal */}
+      {/* ============================================================
+          ADD PROMPT TEMPLATE MODAL
+      ============================================================ */}
       {isAddingPromptTpl && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-sm font-bold text-white">Create AI Prompt Template</h3>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(13, 15, 10, 0.85)', backdropFilter: 'blur(6px)' }}
+        >
+          <div
+            className="max-w-lg w-full p-6 space-y-4 shadow-2xl"
+            style={{ background: 'rgba(20, 22, 14, 0.98)', border: `1px solid ${PAL.borderStrong}`, borderRadius: '1rem' }}
+          >
+            <div className="flex items-center justify-between pb-3" style={{ borderBottom: `1px solid ${PAL.border}` }}>
+              <h3 className="text-sm font-bold" style={{ color: '#ffffff' }}>Create AI Prompt Template</h3>
               <button
                 onClick={() => setIsAddingPromptTpl(false)}
-                className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                className="text-xs cursor-pointer"
+                style={{ color: PAL.text3 }}
               >
                 Cancel
               </button>
@@ -1106,23 +1320,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               className="space-y-3 text-xs"
             >
               <div>
-                <label className="block text-slate-300 mb-1">Template Name</label>
+                <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Template Name</label>
                 <input
                   type="text"
                   value={newTplName}
                   onChange={(e) => setNewTplName(e.target.value)}
                   required
                   placeholder="e.g. CSAT Sentiment Analyzer"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-100"
+                  className="w-full p-2.5"
+                  style={inputStyle}
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 mb-1">Operation Type</label>
+                  <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Operation Type</label>
                   <select
                     value={newTplOperation}
                     onChange={(e) => setNewTplOperation(e.target.value as any)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-100"
+                    className="w-full p-2.5"
+                    style={inputStyle}
                   >
                     <option value="Classification">Classification</option>
                     <option value="Response Generation">Response Generation</option>
@@ -1132,32 +1348,31 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Purpose / Description</label>
+                  <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Purpose</label>
                   <input
                     type="text"
                     value={newTplPurpose}
                     onChange={(e) => setNewTplPurpose(e.target.value)}
                     placeholder="Short description"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-100"
+                    className="w-full p-2.5"
+                    style={inputStyle}
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-slate-300 mb-1">System Prompt Content</label>
+                <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>System Prompt Content</label>
                 <textarea
                   value={newTplSystemPrompt}
                   onChange={(e) => setNewTplSystemPrompt(e.target.value)}
                   required
                   rows={6}
                   placeholder="You are SupportNova's..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-100 font-mono text-xs"
+                  className="w-full p-2.5 font-mono text-xs"
+                  style={inputStyle}
                 />
               </div>
               <div className="flex justify-end pt-2">
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold cursor-pointer"
-                >
+                <button type="submit" className="px-4 py-2 font-semibold cursor-pointer" style={goldBtn}>
                   Create Template
                 </button>
               </div>
@@ -1166,36 +1381,40 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         </div>
       )}
 
+      {/* ============================================================
+          TAB: RULE MATRIX
+      ============================================================ */}
       {activeTab === 'ruleMatrix' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-white flex items-center space-x-2">
-                <Grid className="w-4 h-4 text-emerald-400" />
-                <span>Complaint Resolution Rule Matrix (Pipeline 2 Ground-Truth)</span>
+              <h2 className="text-sm font-bold flex items-center space-x-2" style={{ color: '#ffffff' }}>
+                <Grid className="w-4 h-4" style={{ color: PAL.gold }} />
+                <span>Support rules</span>
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Human-authored decision matrix governing classification, routing, and escalation.
+              <p className="text-xs mt-0.5" style={{ color: PAL.text3 }}>
+                Set the rules used to sort requests, choose a team, and decide when to ask for extra help.
               </p>
             </div>
             <button
               onClick={() => setIsAddingRule(true)}
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1 transition cursor-pointer"
+              className="px-3 py-1.5 text-xs font-semibold flex items-center space-x-1 transition cursor-pointer"
+              style={goldBtn}
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Matrix Rule</span>
+              <span>Add a rule</span>
             </button>
           </div>
 
-          {/* Add Rule Form */}
           {isAddingRule && (
-            <form onSubmit={handleCreateRule} className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-700">
-                <span className="text-xs font-bold text-white">Add New Rule Matrix Entry</span>
+            <form onSubmit={handleCreateRule} className="p-5 space-y-4" style={cardStyle}>
+              <div className="flex items-center justify-between pb-2" style={{ borderBottom: `1px solid ${PAL.border}` }}>
+                <span className="text-xs font-bold" style={{ color: '#ffffff' }}>Add New Rule Matrix Entry</span>
                 <button
                   type="button"
                   onClick={() => setIsAddingRule(false)}
-                  className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
+                  className="text-xs cursor-pointer"
+                  style={{ color: PAL.text3 }}
                 >
                   Cancel
                 </button>
@@ -1203,57 +1422,60 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
                 <div>
-                  <label className="block text-slate-300 mb-1">Category</label>
+                  <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Category</label>
                   <input
                     type="text"
                     value={ruleCat}
                     onChange={(e) => setRuleCat(e.target.value)}
                     required
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Subcategory</label>
+                  <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Subcategory</label>
                   <input
                     type="text"
                     value={ruleSubcat}
                     onChange={(e) => setRuleSubcat(e.target.value)}
                     required
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Responsible Dept</label>
+                  <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Responsible Dept</label>
                   <select
                     value={ruleDept}
                     onChange={(e) => setRuleDept(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   >
                     {departments.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
+                      <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">SLA Target (Hours)</label>
+                  <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>SLA (Hours)</label>
                   <input
                     type="number"
                     value={ruleSla}
                     onChange={(e) => setRuleSla(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div>
-                  <label className="block text-slate-300 mb-1">Rule Urgency</label>
+                  <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Rule Urgency</label>
                   <select
                     value={ruleUrgency}
                     onChange={(e: any) => setRuleUrgency(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   >
                     <option value="Low">Low</option>
                     <option value="Medium">Medium</option>
@@ -1262,22 +1484,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Mandatory Escalation</label>
+                  <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Mandatory Escalation</label>
                   <select
                     value={ruleMandatoryEscalation ? 'true' : 'false'}
                     onChange={(e) => setRuleMandatoryEscalation(e.target.value === 'true')}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   >
                     <option value="false">No (Frontline resolution)</option>
                     <option value="true">Yes (Mandatory)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1">Escalation Tier</label>
+                  <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Escalation Tier</label>
                   <select
                     value={ruleEscalationTier}
                     onChange={(e: any) => setRuleEscalationTier(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full p-2"
+                    style={inputStyle}
                   >
                     <option value="None">None</option>
                     <option value="Supervisor Review">Supervisor Review</option>
@@ -1290,22 +1514,22 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-300 text-xs mb-1">Trigger Conditions / Regex / Keywords</label>
+                <label className="block text-xs mb-1 font-mono uppercase tracking-widest" style={monoLabel}>
+                  Trigger Conditions / Regex / Keywords
+                </label>
                 <input
                   type="text"
                   value={ruleTriggers}
                   onChange={(e) => setRuleTriggers(e.target.value)}
                   required
                   placeholder="e.g. Keywords: smoke, sparks, swelling, thermal runaway"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-100"
+                  className="w-full p-2"
+                  style={inputStyle}
                 />
               </div>
 
               <div className="flex justify-end">
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold cursor-pointer"
-                >
+                <button type="submit" className="px-4 py-2 text-xs font-semibold cursor-pointer" style={goldBtn}>
                   Save Rule to Matrix
                 </button>
               </div>
@@ -1313,58 +1537,75 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           )}
 
           {/* Rule Matrix Table */}
-          <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl overflow-hidden">
+          <div className="overflow-hidden" style={cardStyle}>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-slate-700/80 bg-slate-900/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                    <th className="py-3 px-3">Rule ID</th>
-                    <th className="py-3 px-3">Category & Subcategory</th>
-                    <th className="py-3 px-3">Routing Dept</th>
-                    <th className="py-3 px-3">Urgency / Pri</th>
-                    <th className="py-3 px-3">Mandatory Escalation</th>
-                    <th className="py-3 px-3">Trigger Conditions</th>
-                    <th className="py-3 px-3">SLA</th>
-                    <th className="py-3 px-3 text-right">Action</th>
+                  <tr style={{ background: 'rgba(13, 15, 10, 0.85)' }}>
+                    {['Rule ID', 'Category & Subcategory', 'Routing Dept', 'Urgency / Pri', 'Mandatory Escalation', 'Trigger Conditions', 'SLA', 'Action'].map((h, i) => (
+                      <th
+                        key={h}
+                        className={`py-3 px-3 ${i === 7 ? 'text-right' : ''}`}
+                        style={{
+                          fontFamily: 'JetBrains Mono, monospace',
+                          fontSize: '0.65rem',
+                          letterSpacing: '0.1em',
+                          textTransform: 'uppercase',
+                          color: PAL.gold,
+                          borderBottom: `1px solid ${PAL.border}`,
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {(ruleMatrix ?? []).map((rule) => (
-                    <tr key={rule.id} className="hover:bg-slate-800/40 transition">
-                      <td className="py-2.5 px-3 font-mono font-semibold text-emerald-400">
+                <tbody>
+                  {visibleRules.map((rule) => (
+                    <tr
+                      key={rule.id}
+                      style={{ borderBottom: `1px solid rgba(215, 190, 130, 0.1)` }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(215, 190, 130, 0.04)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <td className="py-2.5 px-3 font-mono font-semibold" style={{ color: PAL.gold }}>
                         {rule.id}
                       </td>
-                      <td className="py-2.5 px-3 text-slate-200">
-                        <span className="font-semibold text-white block">{rule.category}</span>
-                        <span className="text-[11px] text-slate-400">{rule.subcategory}</span>
+                      <td className="py-2.5 px-3">
+                        <span className="font-semibold block" style={{ color: '#ffffff' }}>{rule.category}</span>
+                        <span className="text-[11px]" style={{ color: PAL.text3 }}>{rule.subcategory}</span>
                       </td>
-                      <td className="py-2.5 px-3 text-blue-300 font-medium">
+                      <td className="py-2.5 px-3 font-medium" style={{ color: PAL.gold }}>
                         {rule.department}
                       </td>
-                      <td className="py-2.5 px-3">
-                        <span className="font-mono text-slate-300">
-                          {rule.urgency} / {rule.priority}
-                        </span>
+                      <td className="py-2.5 px-3 font-mono" style={{ color: PAL.text2 }}>
+                        {rule.urgency} / {rule.priority}
                       </td>
                       <td className="py-2.5 px-3">
                         {rule.mandatoryEscalation ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-400">
+                          <span
+                            className="px-2 py-0.5 rounded text-[10px] font-bold font-mono"
+                            style={{ background: 'rgba(64, 4, 6, 0.5)', color: '#e0a1a0', border: '1px solid rgba(142, 55, 54, 0.55)' }}
+                          >
                             {rule.escalationTier}
                           </span>
                         ) : (
-                          <span className="text-slate-500 font-mono text-[11px]">None</span>
+                          <span className="font-mono text-[11px]" style={{ color: PAL.text3 }}>None</span>
                         )}
                       </td>
-                      <td className="py-2.5 px-3 text-slate-300 text-[11px] max-w-xs truncate">
+                      <td className="py-2.5 px-3 text-[11px] max-w-xs truncate" style={{ color: PAL.text2 }}>
                         {rule.triggerConditions}
                       </td>
-                      <td className="py-2.5 px-3 font-mono text-slate-400">
+                      <td className="py-2.5 px-3 font-mono" style={{ color: PAL.text3 }}>
                         {rule.slaHours}h
                       </td>
                       <td className="py-2.5 px-3 text-right">
                         <button
                           onClick={() => onDeleteRule(rule.id)}
-                          className="text-slate-400 hover:text-rose-400 p-1 rounded cursor-pointer"
+                          className="p-1 rounded cursor-pointer"
+                          style={{ color: PAL.text3 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = '#e0a1a0'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = PAL.text3; }}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1375,122 +1616,74 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </table>
             </div>
           </div>
+          <Pagination page={currentRulePage} pageSize={adminPageSize} totalItems={ruleMatrix.length} onPageChange={setRulePage} />
         </div>
       )}
 
-      {activeTab === 'prompts' && (
-        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-700/60">
-            <div>
-              <h2 className="text-sm font-bold text-white flex items-center space-x-2">
-                <FileCode className="w-4 h-4 text-blue-400" />
-                <span>Pipeline 1 GenAI Prompt Engineering & Versioning</span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Configure the LLM instruction template, anti-injection directives, and output formatting.
-              </p>
-            </div>
-
-            {promptSaved && (
-              <span className="text-xs text-emerald-400 flex items-center space-x-1 font-semibold">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Prompt Updated Successfully</span>
-              </span>
-            )}
-          </div>
-
-          {activePrompt && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                  <span className="text-[10px] text-slate-500 uppercase block font-semibold">Template ID</span>
-                  <span className="font-mono text-blue-400">{activePrompt.id}</span>
-                </div>
-                <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                  <span className="text-[10px] text-slate-500 uppercase block font-semibold">Model Engine</span>
-                  <span className="font-mono text-white">{activePrompt.model}</span>
-                </div>
-                <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                  <span className="text-[10px] text-slate-500 uppercase block font-semibold">Version & Status</span>
-                  <span className="text-emerald-400 font-semibold">v{activePrompt.version} ({activePrompt.status})</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  System Prompt Directive (Version Controlled)
-                </label>
-                <textarea
-                  value={promptText}
-                  onChange={(e) => setPromptText(e.target.value)}
-                  rows={14}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 font-mono text-xs text-slate-200 leading-relaxed focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  onClick={handleSavePrompt}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-blue-600/30 cursor-pointer"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Save Template Changes</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
+      {/* ============================================================
+          TAB: SECURITY
+      ============================================================ */}
       {activeTab === 'security' && (
         <div className="space-y-6">
-          <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-6">
-            <h2 className="text-sm font-bold text-white flex items-center space-x-2">
-              <ShieldAlert className="w-4 h-4 text-purple-400" />
-              <span>Adversarial Defense & Integrity Test Suite</span>
+          <div className="p-6" style={cardStyle}>
+            <h2 className="text-sm font-bold flex items-center space-x-2" style={{ color: '#ffffff' }}>
+              <ShieldAlert className="w-4 h-4" style={{ color: PAL.gold }} />
+              <span>Security checks</span>
             </h2>
-            <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-              PRD & SRS Section 8 Mandate: Execute live adversarial tests to verify that prompt injection attacks,
-              sentiment-urgency deception, and ungrounded refund promises are trapped by Pipeline 2 and routed to
-              human adjudication.
+            <p className="text-xs mt-1 max-w-3xl" style={{ color: PAL.text3 }}>
+              Run test requests to make sure unsafe instructions and unsupported refund offers are caught and sent for review.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
-              {(testCases ?? []).map((tc) => {
+              {visibleSecurityTests.map((tc) => {
                 const isRunning = runningTestId === tc.id;
                 return (
                   <div
                     key={tc.id}
-                    className="bg-slate-900/80 border border-slate-700/80 rounded-xl p-5 space-y-3 relative overflow-hidden"
+                    className="p-5 space-y-3 relative overflow-hidden"
+                    style={{
+                      background: 'rgba(13, 15, 10, 0.7)',
+                      border: `1px solid ${PAL.border}`,
+                      borderRadius: '1rem',
+                    }}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-bold text-purple-400">
+                      <span className="font-mono text-xs font-bold" style={{ color: PAL.gold }}>
                         {tc.id}
                       </span>
-                      <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-purple-500/20 text-purple-300">
+                      <span
+                        className="px-2 py-0.5 text-[10px] font-semibold rounded font-mono"
+                        style={{ background: 'rgba(215, 190, 130, 0.12)', color: PAL.gold, border: `1px solid rgba(215, 190, 130, 0.3)` }}
+                      >
                         {tc.category}
                       </span>
                     </div>
 
-                    <h3 className="text-sm font-bold text-white">
+                    <h3 className="text-sm font-bold" style={{ color: '#ffffff' }}>
                       {tc.name}
                     </h3>
 
-                    <p className="text-xs text-slate-300">
+                    <p className="text-xs" style={{ color: PAL.text2 }}>
                       {tc.description}
                     </p>
 
-                    <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800 text-[11px] text-slate-400 space-y-1">
-                      <span className="text-slate-500 uppercase font-semibold block text-[10px]">
-                        Attack Payload / Trap:
+                    <div
+                      className="p-3 rounded-lg text-[11px] space-y-1"
+                      style={{ background: 'rgba(13, 15, 10, 0.85)', border: `1px solid ${PAL.border}` }}
+                    >
+                      <span className="font-semibold block text-[10px] font-mono uppercase tracking-widest" style={{ color: PAL.text3 }}>
+                        Example request:
                       </span>
-                      <p className="text-slate-300 font-mono italic">
+                      <p className="font-mono italic" style={{ color: PAL.text2 }}>
                         "{tc.sampleComplaint.description.slice(0, 140)}..."
                       </p>
                     </div>
 
-                    <div className="text-[11px] text-emerald-400 bg-emerald-950/20 p-2.5 rounded border border-emerald-500/20">
-                      <strong className="block text-emerald-300 mb-0.5">Expected Defense:</strong>
+                    <div
+                      className="text-[11px] p-2.5 rounded"
+                      style={{ background: 'rgba(81, 90, 71, 0.28)', border: '1px solid rgba(116, 131, 101, 0.5)', color: '#a7bc8d' }}
+                    >
+                      <strong className="block mb-0.5">Expected result:</strong>
                       {tc.expectedDefense}
                     </div>
 
@@ -1498,86 +1691,113 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       <button
                         onClick={() => handleRunSecurityBenchmark(tc.id)}
                         disabled={isRunning}
-                        className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition cursor-pointer disabled:opacity-50"
+                        className="px-3.5 py-1.5 text-xs font-semibold flex items-center space-x-1.5 transition cursor-pointer disabled:opacity-50"
+                        style={{
+                          background: 'linear-gradient(180deg, #8e3736 0%, #400406 100%)',
+                          color: '#f5edda',
+                          border: 'none',
+                          borderRadius: '0.6rem',
+                          boxShadow: '0 10px 24px rgba(64, 4, 6, 0.35)',
+                        }}
                       >
                         <Play className={`w-3.5 h-3.5 ${isRunning ? 'animate-spin' : ''}`} />
-                        <span>{isRunning ? 'Simulating Attack...' : 'Execute Test Run'}</span>
+                        <span>{isRunning ? 'Running check...' : 'Run check'}</span>
                       </button>
                     </div>
                   </div>
                 );
               })}
             </div>
+            <Pagination page={currentSecurityPage} pageSize={adminPageSize} totalItems={testCases.length} onPageChange={setSecurityPage} />
           </div>
 
-          {/* Test Execution Result Modal / Box */}
+          {/* Test Result */}
           {testResult && (
-            <div className="bg-slate-900 border-2 border-purple-500/50 rounded-2xl p-6 space-y-4 shadow-2xl">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div
+              className="p-6 space-y-4 shadow-2xl"
+              style={{
+                background: 'rgba(20, 22, 14, 0.98)',
+                border: `2px solid ${PAL.borderStrong}`,
+                borderRadius: '1rem',
+              }}
+            >
+              <div className="flex items-center justify-between pb-3" style={{ borderBottom: `1px solid ${PAL.border}` }}>
                 <div className="flex items-center space-x-2">
-                  <span className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400">
+                  <span
+                    className="p-1.5 rounded-lg"
+                    style={{ background: 'rgba(215, 190, 130, 0.15)', color: PAL.gold, border: `1px solid rgba(215, 190, 130, 0.3)` }}
+                  >
                     <Sparkles className="w-5 h-5" />
                   </span>
                   <div>
-                    <h3 className="text-sm font-bold text-white">
-                      Defense Verification Result: {testResult.testCase.name}
+                    <h3 className="text-sm font-bold" style={{ color: '#ffffff' }}>
+                      Check result: {testResult.testCase.name}
                     </h3>
-                    <span className="text-xs text-emerald-400 font-semibold">
-                      System Defense Status: {testResult.passedDefense ? 'PASSED (Threat Intercepted)' : 'FAILED'}
+                    <span className="text-xs font-semibold" style={{ color: testResult.passedDefense ? '#a7bc8d' : '#e0a1a0' }}>
+                      Status: {testResult.passedDefense ? 'Passed (unsafe request caught)' : 'Failed'}
                     </span>
                   </div>
                 </div>
 
                 <button
                   onClick={() => setTestResult(null)}
-                  className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                  className="text-xs cursor-pointer"
+                  style={{ color: PAL.text3 }}
                 >
                   Dismiss
                 </button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-                    Pipeline 1 (GenAI) Outcome
+                <div className="p-4 rounded-xl" style={{ background: 'rgba(13, 15, 10, 0.85)', border: `1px solid ${PAL.border}` }}>
+                  <span className="text-[10px] uppercase font-bold block mb-1 font-mono tracking-widest" style={{ color: PAL.text3 }}>
+                    Pipeline 1 (GenAI)
                   </span>
                   <div className="space-y-1">
-                    <div>Urgency: <strong className="text-white">{testResult.pipeline1Output.urgency}</strong></div>
-                    <div>Department: <strong className="text-white">{testResult.pipeline1Output.recommendedDepartment}</strong></div>
-                    <div>Escalation: <strong className="text-white">{testResult.pipeline1Output.escalationRequired ? 'Yes' : 'No'}</strong></div>
+                    <div style={{ color: PAL.text2 }}>Urgency: <strong style={{ color: '#ffffff' }}>{testResult.pipeline1Output.urgency}</strong></div>
+                    <div style={{ color: PAL.text2 }}>Dept: <strong style={{ color: '#ffffff' }}>{testResult.pipeline1Output.recommendedDepartment}</strong></div>
+                    <div style={{ color: PAL.text2 }}>Escalation: <strong style={{ color: '#ffffff' }}>{testResult.pipeline1Output.escalationRequired ? 'Yes' : 'No'}</strong></div>
                   </div>
                 </div>
 
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-                    Python Ground-Truth Crosscheck
+                <div className="p-4 rounded-xl" style={{ background: 'rgba(13, 15, 10, 0.85)', border: `1px solid ${PAL.border}` }}>
+                  <span className="text-[10px] uppercase font-bold block mb-1 font-mono tracking-widest" style={{ color: PAL.text3 }}>
+                    Python Crosscheck
                   </span>
                   <div className="space-y-1">
-                    <div>Status: <strong className={testResult.pythonValidation?.passed ? 'text-emerald-400' : 'text-amber-400'}>{testResult.pythonValidation?.status || 'Validated'}</strong></div>
-                    <div>Score: <strong className="text-white font-mono">{testResult.pythonValidation?.validationScore ?? 90}%</strong></div>
-                    <div>Findings: <strong className="text-rose-400">{testResult.pythonValidation?.findings?.length || 0}</strong></div>
+                    <div style={{ color: PAL.text2 }}>
+                      Status: <strong style={{ color: testResult.pythonValidation?.passed ? '#a7bc8d' : PAL.gold }}>
+                        {testResult.pythonValidation?.status || 'Validated'}
+                      </strong>
+                    </div>
+                    <div style={{ color: PAL.text2 }}>Score: <strong className="font-mono" style={{ color: '#ffffff' }}>{testResult.pythonValidation?.validationScore ?? 90}%</strong></div>
+                    <div style={{ color: PAL.text2 }}>Findings: <strong style={{ color: '#e0a1a0' }}>{testResult.pythonValidation?.findings?.length || 0}</strong></div>
                   </div>
                 </div>
 
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
-                    Pipeline 2 (Rule Matrix) Defense
+                <div className="p-4 rounded-xl" style={{ background: 'rgba(13, 15, 10, 0.85)', border: `1px solid ${PAL.border}` }}>
+                  <span className="text-[10px] uppercase font-bold block mb-1 font-mono tracking-widest" style={{ color: PAL.text3 }}>
+                    Pipeline 2 (Rules)
                   </span>
                   <div className="space-y-1">
-                    <div>Adversarial Flags: <strong className="text-purple-400">{(testResult.pipeline2Output.adversarialPromptFlags ?? []).length}</strong></div>
-                    <div>Bad Promises Flagged: <strong className="text-rose-400">{(testResult.pipeline2Output.unsupportedPromiseFlags ?? []).length}</strong></div>
-                    <div>Mandatory Escalation: <strong className="text-white">{testResult.pipeline2Output.mandatoryEscalation ? 'YES' : 'No'}</strong></div>
+                    <div style={{ color: PAL.text2 }}>Adversarial: <strong style={{ color: PAL.gold }}>{(testResult.pipeline2Output.adversarialPromptFlags ?? []).length}</strong></div>
+                    <div style={{ color: PAL.text2 }}>Bad Promises: <strong style={{ color: '#e0a1a0' }}>{(testResult.pipeline2Output.unsupportedPromiseFlags ?? []).length}</strong></div>
+                    <div style={{ color: PAL.text2 }}>Escalation: <strong style={{ color: '#ffffff' }}>{testResult.pipeline2Output.mandatoryEscalation ? 'YES' : 'No'}</strong></div>
                   </div>
                 </div>
 
-                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+                <div className="p-4 rounded-xl" style={{ background: 'rgba(13, 15, 10, 0.85)', border: `1px solid ${PAL.border}` }}>
+                  <span className="text-[10px] uppercase font-bold block mb-1 font-mono tracking-widest" style={{ color: PAL.text3 }}>
                     Final Adjudication
                   </span>
                   <div className="space-y-1">
-                    <div>Status: <strong className={testResult.comparisonResult.verificationStatus === 'Verified' ? 'text-emerald-400' : 'text-amber-400'}>{testResult.comparisonResult.verificationStatus}</strong></div>
-                    <div>Score: <strong className="text-white">{testResult.comparisonResult.verificationScore}%</strong></div>
-                    <div className="text-[11px] text-slate-400">Triangulated by AI + Python + Rules.</div>
+                    <div style={{ color: PAL.text2 }}>
+                      Status: <strong style={{ color: testResult.comparisonResult.verificationStatus === 'Verified' ? '#a7bc8d' : PAL.gold }}>
+                        {testResult.comparisonResult.verificationStatus}
+                      </strong>
+                    </div>
+                    <div style={{ color: PAL.text2 }}>Score: <strong style={{ color: '#ffffff' }}>{testResult.comparisonResult.verificationScore}%</strong></div>
+                    <div className="text-[11px]" style={{ color: PAL.text3 }}>AI + Python + Rules triangulated.</div>
                   </div>
                 </div>
               </div>
@@ -1586,69 +1806,92 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         </div>
       )}
 
-      {/* Users & RBAC Management Tab */}
+      {/* ============================================================
+          TAB: USERS
+      ============================================================ */}
       {activeTab === 'users' && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-bold text-white flex items-center space-x-2">
-                <Users className="w-4 h-4 text-cyan-400" />
-                <span>Enterprise User & RBAC Governance</span>
+              <h2 className="text-sm font-bold flex items-center space-x-2" style={{ color: '#ffffff' }}>
+                <Users className="w-4 h-4" style={{ color: PAL.gold }} />
+                <span>Team accounts and roles</span>
               </h2>
-              <p className="text-xs text-slate-400">
-                Manage accounts, assign roles, enforce department scopes, and audit active sessions
+              <p className="text-xs" style={{ color: PAL.text3 }}>
+                Add team members, choose their roles, and manage their access.
               </p>
             </div>
 
             <button
               onClick={() => setIsAddingUser(true)}
-              className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition cursor-pointer shadow-md shadow-cyan-600/20 shrink-0"
+              className="px-3 py-1.5 text-xs font-semibold flex items-center space-x-1.5 transition cursor-pointer shrink-0"
+              style={goldBtn}
             >
               <UserPlus className="w-3.5 h-3.5" />
-              <span>Add New User</span>
+              <span>Add team member</span>
             </button>
           </div>
 
-          {/* Role Counts Summary */}
+          {/* Role counts */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {(['Customer', 'Agent', 'Reviewer', 'Manager', 'Administrator'] as UserRole[]).map((r) => {
               const count = (users ?? []).filter((u) => u.role === r).length;
+              const isActive = userRoleFilter === r;
               return (
                 <div
                   key={r}
-                  onClick={() => setUserRoleFilter(userRoleFilter === r ? 'All' : r)}
-                  className={`p-3 rounded-xl border text-center transition cursor-pointer ${
-                    userRoleFilter === r
-                      ? 'bg-cyan-950/40 border-cyan-500 ring-1 ring-cyan-500'
-                      : 'bg-slate-800/40 border-slate-700/60 hover:bg-slate-800/80'
-                  }`}
+                  onClick={() => {
+                    setUserRoleFilter(isActive ? 'All' : r);
+                    setUserPage(1);
+                  }}
+                  className="p-3 rounded-xl text-center transition cursor-pointer"
+                  style={{
+                    background: isActive ? 'rgba(215, 190, 130, 0.12)' : 'rgba(20, 22, 14, 0.7)',
+                    border: `1px solid ${isActive ? PAL.gold : PAL.border}`,
+                    boxShadow: isActive ? '0 0 0 1px rgba(215, 190, 130, 0.35)' : 'none',
+                  }}
                 >
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">{r}s</span>
-                  <span className="text-lg font-bold text-white font-mono mt-0.5 block">{count}</span>
+                  <span className="text-[10px] uppercase font-bold block font-mono tracking-widest" style={{ color: PAL.text3 }}>
+                    {r}s
+                  </span>
+                  <span className="text-lg font-bold font-mono mt-0.5 block" style={{ color: '#ffffff' }}>
+                    {count}
+                  </span>
                 </div>
               );
             })}
           </div>
 
-          {/* Search & Filter Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-900/60 border border-slate-800 rounded-xl">
+          {/* Search & Filter */}
+          <div
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3"
+            style={{ background: 'rgba(13, 15, 10, 0.7)', border: `1px solid ${PAL.border}`, borderRadius: '0.85rem' }}
+          >
             <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5" style={{ color: PAL.text3 }} />
               <input
                 type="text"
                 value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
+                onChange={(e) => {
+                  setUserSearch(e.target.value);
+                  setUserPage(1);
+                }}
                 placeholder="Filter users by name, email, department, or company..."
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                className="w-full pl-8 pr-3 py-1.5 text-xs"
+                style={inputStyle}
               />
             </div>
 
             <div className="flex items-center space-x-2">
-              <span className="text-xs text-slate-400">Filter Role:</span>
+              <span className="text-[10px] font-mono uppercase tracking-widest" style={{ color: PAL.text3 }}>Filter Role:</span>
               <select
                 value={userRoleFilter}
-                onChange={(e) => setUserRoleFilter(e.target.value)}
-                className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                onChange={(e) => {
+                  setUserRoleFilter(e.target.value);
+                  setUserPage(1);
+                }}
+                className="px-2.5 py-1.5 text-xs"
+                style={inputStyle}
               >
                 <option value="All">All Roles</option>
                 <option value="Customer">Customer</option>
@@ -1662,16 +1905,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
           {/* Add User Modal */}
           {isAddingUser && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <h3 className="text-sm font-bold text-slate-100 flex items-center space-x-2">
-                    <UserPlus className="w-4 h-4 text-cyan-400" />
-                    <span>Create Enterprise Account</span>
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              style={{ background: 'rgba(13, 15, 10, 0.85)', backdropFilter: 'blur(6px)' }}
+            >
+              <div
+                className="max-w-lg w-full p-6 space-y-4 shadow-2xl"
+                style={{ background: 'rgba(20, 22, 14, 0.98)', border: `1px solid ${PAL.borderStrong}`, borderRadius: '1rem' }}
+              >
+                <div className="flex items-center justify-between pb-3" style={{ borderBottom: `1px solid ${PAL.border}` }}>
+                  <h3 className="text-sm font-bold flex items-center space-x-2" style={{ color: '#ffffff' }}>
+                    <UserPlus className="w-4 h-4" style={{ color: PAL.gold }} />
+                    <span>Create team account</span>
                   </h3>
                   <button
                     onClick={() => setIsAddingUser(false)}
-                    className="text-slate-400 hover:text-white cursor-pointer"
+                    className="cursor-pointer"
+                    style={{ color: PAL.text3 }}
                   >
                     ✕
                   </button>
@@ -1705,36 +1955,39 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 >
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-slate-300 font-medium mb-1">Full Name *</label>
+                      <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Full Name *</label>
                       <input
                         type="text"
                         required
                         value={newUserName}
                         onChange={(e) => setNewUserName(e.target.value)}
                         placeholder="e.g. Rachel Adams"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        className="w-full px-3 py-1.5"
+                        style={inputStyle}
                       />
                     </div>
                     <div>
-                      <label className="block text-slate-300 font-medium mb-1">Email Address *</label>
+                      <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Email *</label>
                       <input
                         type="email"
                         required
                         value={newUserEmail}
                         onChange={(e) => setNewUserEmail(e.target.value)}
-                        placeholder="rachel.adams@supportnova.internal"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        placeholder="rachel@supportnova.internal"
+                        className="w-full px-3 py-1.5"
+                        style={inputStyle}
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-slate-300 font-medium mb-1">Assigned Role</label>
+                      <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Assigned Role</label>
                       <select
                         value={newUserRole}
                         onChange={(e) => setNewUserRole(e.target.value as UserRole)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        className="w-full px-3 py-1.5"
+                        style={inputStyle}
                       >
                         <option value="Customer">Customer</option>
                         <option value="Agent">Agent</option>
@@ -1744,11 +1997,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-slate-300 font-medium mb-1">Department</label>
+                      <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Department</label>
                       <select
                         value={newUserDepartment}
                         onChange={(e) => setNewUserDepartment(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        className="w-full px-3 py-1.5"
+                        style={inputStyle}
                       >
                         <option value="Customer Support">Customer Support</option>
                         <option value="Hardware Diagnostics">Hardware Diagnostics</option>
@@ -1761,39 +2015,43 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-slate-300 font-medium mb-1">Job Title</label>
+                      <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Job Title</label>
                       <input
                         type="text"
                         value={newUserTitle}
                         onChange={(e) => setNewUserTitle(e.target.value)}
                         placeholder="e.g. Senior Support Specialist"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        className="w-full px-3 py-1.5"
+                        style={inputStyle}
                       />
                     </div>
                     <div>
-                      <label className="block text-slate-300 font-medium mb-1">Company / Organization</label>
+                      <label className="block mb-1 font-mono uppercase tracking-widest" style={monoLabel}>Company</label>
                       <input
                         type="text"
                         value={newUserCompany}
                         onChange={(e) => setNewUserCompany(e.target.value)}
                         placeholder="SupportNova Corp"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        className="w-full px-3 py-1.5"
+                        style={inputStyle}
                       />
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-2 pt-3 border-t border-slate-800">
+                  <div className="flex items-center space-x-2 pt-3" style={{ borderTop: `1px solid ${PAL.border}` }}>
                     <button
                       type="button"
                       onClick={() => setIsAddingUser(false)}
-                      className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition cursor-pointer"
+                      className="flex-1 py-2 font-semibold transition cursor-pointer"
+                      style={subtleBtn}
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={userActionLoading}
-                      className="flex-1 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition cursor-pointer disabled:opacity-50"
+                      className="flex-1 py-2 font-semibold transition cursor-pointer disabled:opacity-50"
+                      style={goldBtn}
                     >
                       {userActionLoading ? 'Saving...' : 'Create Account'}
                     </button>
@@ -1804,76 +2062,85 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           )}
 
           {/* User Table */}
-          <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-900/60 shadow-xl">
+          <div className="overflow-hidden" style={cardStyle}>
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left">
-                <thead className="bg-slate-800/80 text-slate-300 uppercase tracking-wider font-semibold border-b border-slate-700">
+                <thead style={{ background: 'rgba(13, 15, 10, 0.85)' }}>
                   <tr>
-                    <th className="px-4 py-3">User & Identity</th>
-                    <th className="px-4 py-3">Assigned Role</th>
-                    <th className="px-4 py-3">Department / Org</th>
-                    <th className="px-4 py-3">Title</th>
-                    <th className="px-4 py-3 text-center">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    {['User & Identity', 'Assigned Role', 'Department / Org', 'Title', 'Status', 'Actions'].map((h, i) => (
+                      <th
+                        key={h}
+                        className={`px-4 py-3 ${i === 4 ? 'text-center' : ''} ${i === 5 ? 'text-right' : ''}`}
+                        style={{
+                          fontFamily: 'JetBrains Mono, monospace',
+                          fontSize: '0.65rem',
+                          letterSpacing: '0.1em',
+                          textTransform: 'uppercase',
+                          color: PAL.gold,
+                          borderBottom: `1px solid ${PAL.border}`,
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800 text-slate-200">
-                  {(users ?? [])
-                    .filter((u) => {
-                      if (userRoleFilter !== 'All' && u.role !== userRoleFilter) return false;
-                      if (!userSearch.trim()) return true;
-                      const q = userSearch.toLowerCase();
-                      return (
-                        u.name.toLowerCase().includes(q) ||
-                        u.email.toLowerCase().includes(q) ||
-                        (u.department || '').toLowerCase().includes(q) ||
-                        (u.company || '').toLowerCase().includes(q)
-                      );
-                    })
-                    .map((u) => {
-                      const getBadge = (role: UserRole) => {
+                <tbody>
+                  {visibleUsers.map((u) => {
+                      const badgeStyle = (role: UserRole): React.CSSProperties => {
                         switch (role) {
-                          case 'Customer':
-                            return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-                          case 'Agent':
-                            return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-                          case 'Reviewer':
-                            return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-                          case 'Manager':
-                            return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
-                          case 'Administrator':
-                            return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
+                          case 'Customer': return { background: 'rgba(81, 90, 71, 0.35)', color: '#a7bc8d', border: '1px solid rgba(116, 131, 101, 0.5)' };
+                          case 'Agent': return { background: 'rgba(215, 190, 130, 0.12)', color: PAL.gold, border: `1px solid rgba(215, 190, 130, 0.35)` };
+                          case 'Reviewer': return { background: 'rgba(117, 92, 27, 0.3)', color: PAL.gold, border: '1px solid rgba(117, 92, 27, 0.55)' };
+                          case 'Manager': return { background: 'rgba(122, 68, 25, 0.32)', color: '#e4b98a', border: '1px solid rgba(122, 68, 25, 0.6)' };
+                          case 'Administrator': return { background: 'rgba(64, 4, 6, 0.5)', color: '#e0a1a0', border: '1px solid rgba(142, 55, 54, 0.55)' };
                         }
                       };
 
                       return (
-                        <tr key={u.id} className="hover:bg-slate-800/40 transition">
+                        <tr
+                          key={u.id}
+                          style={{ borderBottom: `1px solid rgba(215, 190, 130, 0.1)` }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(215, 190, 130, 0.04)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                        >
                           <td className="px-4 py-3">
                             <div className="flex items-center space-x-2.5">
-                              <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-white shrink-0">
+                              <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 font-mono"
+                                style={{ background: 'rgba(215, 190, 130, 0.12)', color: PAL.gold, border: `1px solid rgba(215, 190, 130, 0.3)` }}
+                              >
                                 {u.avatar || u.name.slice(0, 2).toUpperCase()}
                               </div>
                               <div>
-                                <div className="font-semibold text-slate-100">{u.name}</div>
-                                <div className="text-[11px] text-slate-400">{u.email}</div>
+                                <div className="font-semibold" style={{ color: '#ffffff' }}>{u.name}</div>
+                                <div className="text-[11px]" style={{ color: PAL.text3 }}>{u.email}</div>
                               </div>
                             </div>
                           </td>
 
                           <td className="px-4 py-3">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getBadge(u.role)}`}>
+                            <span
+                              className="px-2 py-0.5 rounded text-[10px] font-semibold font-mono uppercase tracking-widest"
+                              style={badgeStyle(u.role)}
+                            >
                               {u.role}
                             </span>
                           </td>
 
-                          <td className="px-4 py-3 text-slate-300">
+                          <td className="px-4 py-3" style={{ color: PAL.text2 }}>
                             {u.department || u.company || (u.role === 'Customer' ? 'Consumer' : 'General Support')}
                           </td>
 
-                          <td className="px-4 py-3 text-slate-400">{u.title || `${u.role} Member`}</td>
+                          <td className="px-4 py-3" style={{ color: PAL.text3 }}>
+                            {u.title || `${u.role} Member`}
+                          </td>
 
                           <td className="px-4 py-3 text-center">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            <span
+                              className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase tracking-widest"
+                              style={{ background: 'rgba(81, 90, 71, 0.35)', color: '#a7bc8d', border: '1px solid rgba(116, 131, 101, 0.5)' }}
+                            >
                               Active
                             </span>
                           </td>
@@ -1883,7 +2150,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                               {onDeleteUser && (
                                 <button
                                   onClick={() => onDeleteUser(u.id)}
-                                  className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded transition cursor-pointer"
+                                  className="p-1.5 rounded transition cursor-pointer"
+                                  style={{ color: PAL.text3 }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.color = '#e0a1a0'; e.currentTarget.style.background = 'rgba(64, 4, 6, 0.3)'; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.color = PAL.text3; e.currentTarget.style.background = 'transparent'; }}
                                   title="Delete User"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -1898,6 +2168,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </table>
             </div>
           </div>
+          <Pagination page={currentUserPage} pageSize={adminPageSize} totalItems={filteredUsers.length} onPageChange={setUserPage} />
         </div>
       )}
     </div>

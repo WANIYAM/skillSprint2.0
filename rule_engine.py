@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -8,6 +9,21 @@ def _text(value: Any) -> str:
 
 def _contains_any(text: str, values: list[str]) -> bool:
     return any(value in text for value in values)
+
+
+SAFETY_HAZARD_PATTERNS = (
+    r"\bsmoke\s+(?:is\s+)?(?:coming|pouring|billowing)\s+(?:from|out\s+of)\b",
+    r"\b(?:burning|burnt)\s+(?:plastic\s+)?(?:smell|odor|odour)\b",
+    r"\b(?:smell|smells|smelling)\s+(?:like\s+)?burning\b",
+    r"\b(?:battery|device|laptop|computer|phone|tablet|charger|appliance)\b.{0,40}\b(?:smoking|overheating|overheated|swollen|swelling|sparking|sparks|melted|flames|on\s+fire|caught\s+(?:on\s+)?fire|catching\s+fire|getting\s+hot|very\s+hot)\b",
+    r"\b(?:smoking|overheating|overheated|swollen|swelling|sparking|sparks|melted|flames|on\s+fire|caught\s+(?:on\s+)?fire|catching\s+fire|getting\s+hot|very\s+hot)\b.{0,40}\b(?:battery|device|laptop|computer|phone|tablet|charger|appliance)\b",
+    r"\b(?:battery|device|laptop|computer|phone|tablet|charger|appliance)\b.{0,40}\b(?:emitting|releasing|producing)\s+(?:smoke|sparks|flames)\b",
+    r"\b(?:smoke|sparks|flames)\b.{0,40}\b(?:emitted|released|produced)\s+by\s+(?:the\s+)?(?:battery|device|laptop|computer|phone|tablet|charger|appliance)\b",
+)
+
+
+def _has_safety_hazard(text: str) -> bool:
+    return any(re.search(pattern, text) for pattern in SAFETY_HAZARD_PATTERNS)
 
 
 def _rule_id(rules: list[dict[str, Any]], preferred: str, department: str | None = None) -> str | None:
@@ -51,14 +67,11 @@ def run_rule_validation(
         if pattern in full_text
     ]
 
-    safety = _contains_any(full_text, [
-        "smoke", "burning", "swollen", "fire", "explosion", "sparks",
-        "melted", "chemical smell", "overheating",
-    ])
+    safety = _has_safety_hazard(full_text)
     legal = _contains_any(full_text, [
-        "attorney", "lawyer", "lawsuit", "sue", "court", "ftc", "cfpb",
+        "attorney", "lawyer", "lawsuit", "court", "ftc", "cfpb",
         "litigation", "counsel",
-    ])
+    ]) or bool(re.search(r"\bsue\b", full_text))
     billing = _contains_any(full_text, [
         "double charge", "duplicate charge", "charged twice", "refund",
         "overcharged", "invoice",
@@ -163,6 +176,55 @@ def run_rule_validation(
         elif expected_priority == "P3":
             expected_priority = "P2"
 
+    repeat_signal = bool(complaint.get("isRepeat") or complaint.get("previousComplaintId")) or _contains_any(
+        full_text,
+        ["previous case", "earlier case", "repeat contact", "following up", "still unresolved", "reopened"],
+    )
+    matching_rules = [
+        rule for rule in rules
+        if isinstance(rule.get("subcategory"), str)
+        and (
+            rule["subcategory"].strip().lower() in full_text
+            or (
+                rule.get("category") == expected_category
+                and rule.get("subcategory") == expected_subcategory
+            )
+        )
+        and (
+            rule.get("conditionType") != "repeat_unresolved"
+            or repeat_signal
+        )
+    ]
+    repeat_rules = [rule for rule in matching_rules if rule.get("conditionType") == "repeat_unresolved"]
+    matched_matrix_rule = (
+        repeat_rules[0]
+        if repeat_signal and repeat_rules
+        else next(
+            (rule for rule in matching_rules if rule.get("conditionType") == "issue_reported"),
+            next((rule for rule in matching_rules if not rule.get("conditionType")), None),
+        )
+    )
+    matched_escalation_conditions: list[dict[str, str]] = []
+    if matched_matrix_rule:
+        expected_category = matched_matrix_rule.get("category", expected_category)
+        expected_subcategory = matched_matrix_rule.get("subcategory", expected_subcategory)
+        expected_department = matched_matrix_rule.get("department", expected_department)
+        expected_urgency = matched_matrix_rule.get("urgency", expected_urgency)
+        expected_priority = matched_matrix_rule.get("priority", expected_priority)
+        if matched_matrix_rule.get("id") and matched_matrix_rule["id"] not in matched_rules:
+            matched_rules.append(matched_matrix_rule["id"])
+        policy_id = matched_matrix_rule.get("referencePolicyId")
+        if policy_id and policy_id not in applicable_policies:
+            applicable_policies.append(policy_id)
+        if matched_matrix_rule.get("mandatoryEscalation"):
+            mandatory_escalation = True
+            mandatory_tier = matched_matrix_rule.get("escalationTier", "Department Manager")
+            matched_escalation_conditions.append({
+                "id": matched_matrix_rule.get("escalationConditionId", matched_matrix_rule["id"]),
+                "ruleId": matched_matrix_rule["id"],
+                "condition": matched_matrix_rule.get("escalationCondition", matched_matrix_rule.get("triggerConditions", "")),
+            })
+
     unsupported: list[dict[str, str]] = []
     hallucinations: list[dict[str, str]] = []
     missing_actions: list[str] = []
@@ -210,6 +272,7 @@ def run_rule_validation(
         "expectedPriority": expected_priority,
         "mandatoryEscalation": mandatory_escalation,
         "mandatoryEscalationTier": mandatory_tier,
+        "matchedEscalationConditions": matched_escalation_conditions,
         "matchedRules": matched_rules,
         "applicablePolicyDocs": applicable_policies,
         "policyEligibilityApproved": not unsupported,
@@ -319,14 +382,18 @@ def compare_outputs(ai: dict[str, Any] | None, rule: dict[str, Any], validation:
             for threat in python_validation.get("adversarialThreats", [])
         )
 
+    ground_truth_blocked = bool(hallucinations or unsupported or adversarial or missing_actions)
     critical = rule.get("expectedUrgency") == "Critical"
     critical_check = not critical or (urgency_match and department_match and escalation_match)
     python_check = not python_validation or bool(python_validation.get("passed"))
-    status = (
-        "Verified"
-        if score >= 85 and promises_approved and not adversarial and critical_check and python_check
-        else "Manual Review"
-    )
+    if ground_truth_blocked:
+        status = "Manual Review"
+    else:
+        status = (
+            "Verified"
+            if score >= 85 and promises_approved and not adversarial and critical_check and python_check
+            else "Manual Review"
+        )
     return {
         "categoryMatch": category_match,
         "departmentMatch": department_match,
@@ -337,6 +404,7 @@ def compare_outputs(ai: dict[str, Any] | None, rule: dict[str, Any], validation:
         "promisesApproved": promises_approved,
         "verificationScore": round(score),
         "verificationStatus": status,
+        "groundTruthBlocked": ground_truth_blocked,
         "discrepancies": discrepancies,
         "aiVsRuleAgreement": round(score),
         "pythonCrosscheckAgreement": validation.get("validationScore", 90),

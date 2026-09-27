@@ -180,10 +180,25 @@ export interface Pipeline1Output {
     recommendedAction: string;
   };
   rawJson?: string;
-  modelUsed?: string;
+  modelUsed?: string | null;
+  modelRequested?: string;
+  pipelineStatus?: 'COMPLETED' | 'GENAI_UNAVAILABLE' | 'OFFLINE_DEMO_MODE_NOT_GENAI';
+  errorCode?: string;
+  error?: string;
+  attempts?: number;
+  isSimulatedOutput?: boolean;
   promptTemplateId?: string;
   promptVersion?: string;
   generatedAt?: string;
+}
+
+export interface Pipeline1Failure extends Partial<Pipeline1Output> {
+  pipelineStatus: 'GENAI_UNAVAILABLE';
+  errorCode: string;
+  error: string;
+  attempts: number;
+  modelUsed: null;
+  modelRequested: string;
 }
 
 export interface Pipeline2Output {
@@ -313,10 +328,10 @@ export interface Complaint {
   slaDeadline: string;
   slaHours: number;
   slaRiskStatus: 'Safe' | 'Approaching' | 'Breached';
-  pipeline1Output?: Pipeline1Output;
-  pipeline2Output?: Pipeline2Output;
-  pythonValidation?: PythonValidationResult;
-  comparisonResult?: ComparisonResult;
+  pipeline1Output?: Pipeline1Output | Pipeline1Failure | null;
+  pipeline2Output?: Pipeline2Output | null;
+  pythonValidation?: PythonValidationResult | null;
+  comparisonResult?: ComparisonResult | null;
   reviewerDecision?: ReviewerDecision;
   auditTrail: AuditLogEntry[];
   messages: ComplaintMessage[];

@@ -341,8 +341,21 @@ def crosscheck_complaint_and_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
             discrepancy_score += 40
 
     # C. Safety Hazard & Critical Thermal Check
-    safety_triggers = ["smoke", "burning", "swollen", "fire", "explosion", "sparks", "melted", "thermal runaway", "chemical odor", "burned"]
-    has_safety = any(st in full_text for st in safety_triggers)
+    safety_patterns = (
+        r"\bsmoke\s+(?:is\s+)?(?:coming|pouring|billowing)\s+(?:from|out\s+of)\b",
+        r"\b(?:burning|burnt)\s+(?:plastic\s+)?(?:smell|odor|odour)\b",
+        r"\b(?:smell|smells|smelling)\s+(?:like\s+)?burning\b",
+        r"\b(?:battery|device|laptop|computer|phone|tablet|charger|appliance)\b.{0,40}\b(?:smoking|overheating|overheated|swollen|swelling|sparking|sparks|melted|flames|on\s+fire|caught\s+(?:on\s+)?fire|catching\s+fire|getting\s+hot|very\s+hot)\b",
+        r"\b(?:smoking|overheating|overheated|swollen|swelling|sparking|sparks|melted|flames|on\s+fire|caught\s+(?:on\s+)?fire|catching\s+fire|getting\s+hot|very\s+hot)\b.{0,40}\b(?:battery|device|laptop|computer|phone|tablet|charger|appliance)\b",
+        r"\b(?:battery|device|laptop|computer|phone|tablet|charger|appliance)\b.{0,40}\b(?:emitting|releasing|producing)\s+(?:smoke|sparks|flames)\b",
+        r"\b(?:smoke|sparks|flames)\b.{0,40}\b(?:emitted|released|produced)\s+by\s+(?:the\s+)?(?:battery|device|laptop|computer|phone|tablet|charger|appliance)\b",
+    )
+    safety_matches = [
+        match.group(0)
+        for pattern in safety_patterns
+        if (match := re.search(pattern, full_text))
+    ]
+    has_safety = bool(safety_matches)
 
     ai_urgency = ai_output.get("urgency", "Low")
     ai_priority = ai_output.get("priority", "P4")
@@ -355,7 +368,7 @@ def crosscheck_complaint_and_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
             findings.append({
                 "type": "SAFETY_URGENCY_MISMATCH",
                 "severity": "CRITICAL",
-                "message": f"Python Validator: Safety hazard keywords detected ({[w for w in safety_triggers if w in full_text]}), but AI assigned non-critical urgency '{ai_urgency}'. Ground-truth requires CRITICAL."
+                "message": f"Python Validator: Safety hazard phrases detected ({safety_matches}), but AI assigned non-critical urgency '{ai_urgency}'. Ground-truth requires CRITICAL."
             })
             crosscheck_passed = False
             discrepancy_score += 35
@@ -381,8 +394,10 @@ def crosscheck_complaint_and_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
             discrepancy_score += 25
 
     # D. Legal / Litigation Threat Check
-    legal_triggers = ["lawsuit", "attorney", "lawyer", "sue", "court", "ftc", "cfpb", "litigation", "statutory notice", "counsel"]
-    has_legal = any(lt in full_text for lt in legal_triggers)
+    legal_pattern = re.compile(
+        r"\b(?:lawsuits?|attorneys?|lawyers?|sue|sues|sued|suing|courts?|ftc|cfpb|litigation|statutory\s+notice|counsel)\b"
+    )
+    has_legal = bool(legal_pattern.search(full_text))
 
     if has_legal:
         if "legal" not in ai_dept.lower() and "compliance" not in ai_dept.lower():

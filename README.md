@@ -1,7 +1,7 @@
 # SupportNova 🚀
 ### AI-Powered Customer Complaint Resolution Intelligence & Dual-Pipeline Ground-Truth Validation
 
-SupportNova now runs on a Python FastAPI backend with SQLite/SQLAlchemy persistence. The React frontend and its API contract remain unchanged. The former Express implementation is retained as `server.ts` under the `npm run dev:legacy` and `npm run start:legacy` commands for migration comparison only.
+SupportNova runs on a Python FastAPI backend with SQLite/SQLAlchemy persistence. The React frontend and its API contract remain unchanged.
 
 SupportNova is an enterprise-grade customer complaint resolution and quality assurance platform. It combines **Google Gemini Generative AI (Pipeline 1)**, a **Deterministic Ground-Truth Rule Matrix Engine (Pipeline 2)**, and an **Independent Python 3.10 Cross-Verification Engine** to provide automated triage, classification, policy validation, hallucination detection, SLA tracking, and audit-logged manual review.
 
@@ -23,6 +23,8 @@ SupportNova is an enterprise-grade customer complaint resolution and quality ass
 - [Knowledge Base & Document Uploads](#-knowledge-base--document-uploads)
 - [API Endpoints Summary](#-api-endpoints-summary)
 - [Troubleshooting & FAQs](#-troubleshooting--faqs)
+- [Project Reports & Documentation](#-project-reports--documentation)
+- [Technical Blog Article](#-technical-blog-article)
 
 ---
 
@@ -59,7 +61,7 @@ SupportNova leverages a **three-tier intelligence and verification architecture*
                               └───────────────────────────────────┘
 ```
 
-1. **Pipeline 1 (Generative AI)**: Powered by Google Gemini (`@google/genai`) for multi-faceted sentiment analysis, contextual issue extraction, empathetic customer draft generation, and clarification queries. (Includes built-in deterministic heuristic fallback when no API key is supplied).
+1. **Pipeline 1 (Generative AI)**: Calls the pinned Google Gemini 3.5 Flash model (`gemini-3.5-flash`, catalog version `3.5-flash-05-2026`) through the Python `google-genai` SDK. The former `gemini-2.5-flash` model returned 404 as unavailable to new users during live testing, so this catalog-pinned alternative was selected after a successful live generation probe. Transient failures receive at most two retries; if analysis remains unavailable or the API key is missing, the complaint is flagged for manual review without fabricated output.
 2. **Pipeline 2 (Deterministic Rule Matrix)**: Strict SOP policy engine cross-referencing return periods, refund limits, priority matrix, and SLA target deadlines.
 3. **Python 3.10 Ground-Truth Validator**: Independent execution layer running `validator.py` via child process to validate JSON schemas, scan for prompt injection/adversarial threats, extract and chunk uploaded documents (PDF, DOCX, TXT), and calculate cross-engine consistency scores.
 
@@ -398,6 +400,30 @@ No. While adding a `GEMINI_API_KEY` enables real-time Gemini LLM calls, SupportN
 
 #### 4. File upload size limit
 The Express server is configured with a 15MB payload limit (`express.json({ limit: '15mb' })`), sufficient for standard PDF and DOCX policy documentation.
+
+---
+
+## 📚 Project Reports & Documentation
+
+The compiled PRD and SRS specification report for SupportNova is available in the repository `docs/` directory:
+
+👉 **[Download / View SupportNova Final Project Report (PDF)](docs/SupportNova_Final_Project_Report.pdf)**
+
+* **File:** [docs/SupportNova_Final_Project_Report.pdf](file:///d:/MERA%20KAAM/TECHWIZ%202026/Waniya%20api%20wala%20kaam/skillSprint2.0/docs/SupportNova_Final_Project_Report.pdf)
+* **Pages:** 10 Pages (Formal A4 Technical Report)
+* **Embedded Diagrams:** Figure 1 (System Architecture), Figure 2 (DFD Level 0 Context), Figure 3 (DFD Level 1 Decomposition), Figure 4 (Use Case Diagram), Figure 5 (Processing Sequence Diagram).
+
+---
+
+## 📝 Technical Blog Article
+
+The full technical blog post detailing SupportNova's engineering architecture, Google Gemini integration, independent Python ground-truth validation pipeline, and prompt injection defense layers is published in the repository:
+
+👉 **[Read the SupportNova Technical Blog Article](https://github.com/WANIYAM/skillSprint2.0/blob/main/TECHNICAL_BLOG.md)**
+
+* **Local File:** [TECHNICAL_BLOG.md](file:///d:/MERA%20KAAM/TECHWIZ%202026/Waniya%20api%20wala%20kaam/skillSprint2.0/TECHNICAL_BLOG.md)
+* **Word Count:** 4,327 body words (4,808 total words)
+* **Topics Covered:** Dual-pipeline paradigm, pinned Gemini 3.5 Flash API (`gemini-3.5-flash`, catalog version `3.5-flash-05-2026`), JSON schema normalization, corrupted AI output interception test, 108-rule matrix, multi-format policy parsing (PDF/DOCX/TXT), 4-layer prompt injection defense, and empirical benchmark dataset analytics.
 
 ---
 
